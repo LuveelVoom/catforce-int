@@ -1,0 +1,22 @@
+rule B3/S23-q4i
+max-gen 100
+num-catalyst 2
+stable-interval 15
+search-area -30 -30 60 60
+pat bo$obo$obo$b2o$3o! 0 0
+output results.rle
+
+cat b2o$b2o! 100 0 0 .
+cat bo$obo$bo! 100 0 0 .
+cat o$o$o! 100 0 0 . isblinker period 2
+cat 3bo$b3o$o$2o! 100 0 0 .
+cat b2o$o2bo$o2bo$b2o! 100 0 0 .
+cat bo$obo$obo$bo! 100 0 0 .
+cat b2o$obo$bo! 100 0 0 .
+cat 3bo$2bobo$3bo2$b5o$o4bo$obo$b2o$5bo$4bobo$3bo2bo$4b2o! 100 0 0 .
+cat 3bo$2bobo$3bo2$b5o$o4bo$obo$b2o! 100 0 0 .
+cat obo$3o2$3o$obo! 100 0 0 .
+cat obobo$5o2$5o$obobo! 100 0 0 .
+cat bo$obo$bobo$3bo$2bo$2b2o! 100 0 0 .
+cat b2o$o2bo$2obo$3bob2o$3bobo$2b2ob2o! 100 0 0 .
+cat 2o$bo2b2o$2obobo$o2bo$2b2o! 100 0 0 .

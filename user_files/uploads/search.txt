@@ -1,0 +1,37 @@
+rule B3/S23-a5
+max-gen 100
+num-catalyst 2
+stable-interval 15
+search-area -30 -30 60 60
+pat o$b2o$bo$o! 0 0
+output results.rle
+symmetry D2|
+
+cat 2o$obo$2bo$2b2o! 100 0 0 .
+cat bo$obo$bo! 100 0 0 .
+cat b2o$o2bo$obo$bo! 100 0 0 .
+cat b2o$o2bo$o2bo$b2o! 100 0 0 .
+cat bo$obo$obo$bo! 100 0 0 .
+cat bo$obo$2o! 100 0 0 .
+cat b2o$obo$2o! 100 0 0 .
+cat 2bo$bobo$o2bo$obo$bo! 100 0 0 .
+cat b2ob2o$2bobo$obobobo$2o3b2o! 100 0 0 .
+cat 4bo$ob3o$2ob3o$4bo$4b2o! 100 0 0 .
+cat 5b2o$5bo$4b3o$2bo$2b3o$obobo$2o! 100 0 0 .
+cat 4b2o$3bo2bo$o3b2obo$4o2bo$5bo$2b3o$2bo! 100 0 0 .
+cat bo$obo$bo$3o$3bo$2b2o! 100 0 0 .
+cat 2o$obo$bobo$2b2o! 100 0 0 .
+cat 4b2o$bo3bo$b4o$3o$2bo! 100 0 0 .
+cat 2b2o$2bobo2b2o$4bo3bo$4ob3o$o2bobo! 100 0 0 .
+cat 2o$bo$o$b3o$4bo$b2obo$2bob2o$2bo$b2o! 100 0 0 .
+cat 2obo$ob2o! 100 0 0 .
+cat 2o$o4b2o$b3o2bo$3b2o! 100 0 0 .
+cat 2b2o$2bo$b3o$o$2o$bo$bobobo$2ob3o$bobo$o2bo$b2o! 100 0 0 .
+cat $2bo$bobo$bobo$2obobo$3b3o$3bo! 100 0 0 .
+cat o$o$o! 100 0 0 . isblinker period 2
+cat 5b2o$4bobo$bo2bo$obobo$b2ob2o! 100 0 0 .
+cat 2b2o$2bobo$b3o$o$2o$bo$o$2o! 100 0 0 .
+cat 2bo$3o$obobo$3b2o! 100 0 0 .
+cat 2bob2o$2b3o$3bobo$2bob2o$3o$obo$bo! 100 0 0 .
+cat 2o$o2bo$2b2o$b5o$3bobo$3b2o! 100 0 0 .
+cat o$o$o$o! 100 0 0 . isblinker period 2

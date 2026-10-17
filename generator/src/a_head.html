@@ -1,0 +1,364 @@
+<title>CatForce .in Generator</title>
+<style>
+/* Layout: numbered steps on the left; a sticky preview (map of the torus + the generated file) on the right.
+   One deliberate look: solid black, Arial, square corners, slightly cool colours near the RGB axes. */
+:root {
+  --bg: #000000; --surface: #000000; --sunk: #12141a; --ink: #f2f5ff; --muted: #b3b8c6; --line: #535a68;
+  --accent: #00e65c; --accent-ink: #000000; --accent-soft: rgba(0,230,92,.15);
+  --ok: #00e65c; --warn: #f0f05a; --err: #ff3a55; --tip: #2ee6ff;
+  --cell: #f2f5ff; --ghost: #4a86ff; --bait: #ee44ff; --grid: #1a1d24; --axis: #646b7a; --area: rgba(0,230,92,.2);
+  --f-head: Arial, Helvetica, sans-serif;
+  --f-body: Arial, Helvetica, sans-serif;
+  --f-mono: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  color-scheme: dark;
+}
+* { box-sizing: border-box; }
+[hidden] { display: none !important; }
+*, *::before, *::after { border-radius: 0 !important; }
+body { margin: 0; background: var(--bg); color: var(--ink); font: 15px/1.5 var(--f-body); }
+.page { max-width: 1320px; margin: 0 auto; padding-inline: 16px; padding-block: 18px 48px; }
+h1, h2, h3 { font-family: var(--f-head); text-wrap: balance; margin: 0; }
+h1 { font-size: 26px; letter-spacing: -.01em; }
+h1 .ext { font-family: var(--f-mono); font-weight: 600; font-size: .8em; color: var(--accent); }
+h2 { font-size: 18px; }
+h3 { font-size: 14px; }
+code, .mono { font-family: var(--f-mono); font-size: .86em; }
+p { margin: 0; }
+a { color: var(--accent); }
+
+.top { display: flex; flex-wrap: wrap; gap: 12px 24px; align-items: flex-end; justify-content: space-between; margin-bottom: 14px; }
+.top p { color: var(--muted); max-width: 62ch; margin-top: 4px; }
+.btnrow { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+
+button {
+  font: inherit; font-size: 14px; padding: 6px 12px; border-radius: 6px; border: 1px solid var(--line);
+  background: var(--surface); color: var(--ink); cursor: pointer; line-height: 1.3;
+}
+button:hover { border-color: var(--accent); }
+button.primary { background: var(--accent); color: var(--accent-ink); border-color: var(--accent); font-weight: 700; }
+button.ghost { background: transparent; }
+button.small { padding: 3px 9px; font-size: 13px; }
+button.danger { color: var(--err); }
+button.danger:hover { border-color: var(--err); }
+button:disabled { opacity: .45; cursor: not-allowed; border-color: var(--line); }
+:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+
+input[type=text], select, textarea {
+  width: 100%; padding: 6px 8px; border: 1px solid var(--line); border-radius: 6px;
+  background: var(--sunk); color: var(--ink); font: inherit; font-size: 14px;
+}
+textarea { font-family: var(--f-mono); font-size: 13px; resize: vertical; line-height: 1.45; }
+input[type=text]:focus, select:focus, textarea:focus { outline: 2px solid var(--accent); outline-offset: -1px; background: var(--surface); }
+input[type=checkbox] { accent-color: var(--accent); width: 16px; height: 16px; margin: 0; }
+
+.notice { border: 1px solid var(--line); background: var(--surface); border-radius: 8px; padding: 10px 12px; margin-bottom: 14px; display: flex; flex-wrap: wrap; gap: 8px 14px; align-items: center; }
+.notice.example { border-color: var(--accent); background: var(--accent-soft); }
+
+.layout { display: grid; grid-template-columns: minmax(0, 1fr) minmax(320px, 400px); gap: 18px; align-items: start; }
+@media (max-width: 980px) { .layout { grid-template-columns: minmax(0, 1fr); } }
+.steps { display: flex; flex-direction: column; gap: 14px; min-width: 0; }
+
+.step { background: var(--surface); border: 1px solid var(--line); border-radius: 10px; padding: 16px; display: flex; flex-direction: column; gap: 12px; min-width: 0; }
+.step > header { display: grid; grid-template-columns: 28px minmax(0, 1fr); gap: 12px; align-items: start; }
+.num { width: 28px; height: 28px; background: var(--cell); color: var(--surface); font: 700 14px/28px var(--f-mono); text-align: center; border-radius: 3px; }
+.step > header p { color: var(--muted); font-size: 14px; margin-top: 2px; max-width: 70ch; }
+.opt { font: 400 13px var(--f-body); color: var(--muted); }
+
+.fields { display: grid; grid-template-columns: repeat(auto-fill, minmax(180px, 1fr)); gap: 12px 14px; }
+.fld { display: flex; flex-direction: column; gap: 4px; min-width: 0; }
+.fld .lbl { font-weight: 700; font-size: 13px; }
+.fld .lbl code { font-weight: 400; color: var(--muted); }
+.fld small, .hint { color: var(--muted); font-size: 12.5px; line-height: 1.35; }
+.inline { display: flex; gap: 8px; flex-wrap: wrap; align-items: flex-end; }
+.inline > .fld { flex: 1 1 90px; }
+.inline > .fld.grow { flex: 4 1 240px; }
+.checks { display: flex; flex-direction: column; gap: 8px; }
+.check { display: flex; gap: 8px; align-items: flex-start; font-size: 14px; cursor: pointer; }
+.check input { margin-top: 3px; flex: 0 0 auto; }
+.check small { color: var(--muted); display: block; font-size: 12.5px; }
+
+details.more { border-top: 1px solid var(--line); padding-top: 10px; }
+details.more > summary { cursor: pointer; font-weight: 700; font-size: 14px; color: var(--accent); list-style-position: outside; }
+details.more[open] > summary { margin-bottom: 12px; }
+details.more > .body { display: flex; flex-direction: column; gap: 12px; }
+
+.chips { display: flex; flex-wrap: wrap; gap: 6px; }
+.chip { font-size: 13px; padding: 3px 10px; border-radius: 999px; background: var(--sunk); }
+.chip.on { border-color: var(--accent); background: var(--accent-soft); }
+.chip .sub { color: var(--muted); font-size: 12px; }
+
+.msg { font-size: 13.5px; }
+.msg:empty { display: none; }
+.ok { color: var(--ok); } .warn { color: var(--warn); } .err { color: var(--err); } .tip { color: var(--tip); }
+
+.badge { display: inline-block; font-size: 12px; font-weight: 700; padding: 1px 7px; border-radius: 4px; border: 1px solid currentColor; white-space: nowrap; }
+
+.list { display: flex; flex-direction: column; gap: 8px; }
+.empty { color: var(--muted); font-size: 14px; padding: 10px 12px; border: 1px dashed var(--line); border-radius: 8px; }
+
+/* objects found in the pasted pattern */
+.obj { display: grid; grid-template-columns: 64px minmax(0, 1fr) auto; gap: 12px; align-items: center; padding: 8px; border: 1px solid var(--line); border-radius: 8px; background: var(--sunk); }
+.obj canvas, .cat canvas { width: 64px; height: 64px; display: block; background: var(--surface); border: 1px solid var(--line); border-radius: 5px; }
+.obj select { width: auto; }
+.setup { display: flex; gap: 10px; align-items: center; padding: 6px 10px; border: 1px solid var(--line); border-radius: 8px; cursor: pointer; font-size: 14px; }
+.setup.on { border-color: var(--accent); background: var(--accent-soft); }
+.setup code { color: var(--muted); }
+.summary { display: flex; flex-direction: column; gap: 4px; font-size: 14px; padding: 10px 12px; background: var(--sunk); border-radius: 8px; }
+.summary .row { display: flex; gap: 8px; align-items: baseline; flex-wrap: wrap; }
+.summary .row b { min-width: 9ch; }
+.summary code { word-break: break-all; }
+
+/* catalysts */
+.cat { display: grid; grid-template-columns: 64px minmax(0, 1fr); gap: 12px; padding: 10px; border: 1px solid var(--line); border-radius: 8px; background: var(--surface); }
+.cat.bad { border-color: var(--err); }
+.cat-top { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+.cat-top .name { font-weight: 700; }
+.cat-top .dim { color: var(--muted); font-size: 13px; font-family: var(--f-mono); }
+.cat-top .spacer { flex: 1 1 auto; }
+.cat-main { display: flex; flex-direction: column; gap: 8px; min-width: 0; }
+.cat-fields { display: flex; flex-wrap: wrap; gap: 8px 14px; align-items: flex-end; }
+.cat-fields .fld { flex: 1 1 180px; }
+.cat-fields .fld.narrow { flex: 0 1 150px; }
+.cat-note { font-size: 13px; display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+.cat details.more { padding-top: 8px; }
+.cat details.more > summary { font-size: 13px; }
+.sub-rows { display: flex; flex-direction: column; gap: 6px; }
+.subrow { display: grid; grid-template-columns: minmax(0, 1fr) 70px 70px auto; gap: 6px; align-items: start; }
+@media (max-width: 560px) {
+  .cat, .obj { grid-template-columns: 48px minmax(0, 1fr); }
+  .obj canvas, .cat canvas { width: 48px; height: 48px; }
+  .obj select { grid-column: 1 / -1; width: 100%; }
+  .subrow { grid-template-columns: minmax(0, 1fr) 56px 56px; }
+  .subrow button { grid-column: 1 / -1; justify-self: start; }
+}
+
+.goal, .area { display: flex; flex-wrap: wrap; gap: 8px; align-items: flex-end; padding: 10px; border: 1px solid var(--line); border-radius: 8px; background: var(--sunk); }
+.goal .fld { flex: 1 1 120px; }
+.goal .fld.grow { flex: 3 1 260px; }
+.area { padding: 6px 8px; align-items: center; flex-wrap: nowrap; }
+.area select { width: 100px; flex: 0 0 auto; }
+.area input { min-width: 0; }
+.callout { display: flex; flex-direction: column; gap: 6px; padding: 10px 12px; border-radius: 8px; border: 1px solid var(--line); font-size: 14px; background: var(--sunk); }
+.callout.tip { color: var(--ink); border-color: var(--tip); }
+.callout b { color: var(--tip); }
+
+/* preview column */
+.preview { position: sticky; top: calc(env(safe-area-inset-top, 0px) + 12px); display: flex; flex-direction: column; gap: 14px; min-width: 0; }
+@media (max-width: 980px) { .preview { position: static; } }
+.panel { background: var(--surface); border: 1px solid var(--line); border-radius: 10px; padding: 14px; display: flex; flex-direction: column; gap: 10px; min-width: 0; }
+.panel h2 { font-size: 16px; display: flex; justify-content: space-between; align-items: baseline; gap: 8px; }
+#map { width: 100%; max-width: 320px; aspect-ratio: 1; display: block; border: 1px solid var(--line); border-radius: 6px; background: var(--surface); }
+.legend { display: flex; flex-wrap: wrap; gap: 4px 12px; font-size: 12.5px; color: var(--muted); }
+.legend i { display: inline-block; width: 10px; height: 10px; margin-right: 4px; vertical-align: -1px; border-radius: 2px; }
+#out { min-height: 260px; max-height: 50vh; white-space: pre; overflow: auto; font-size: 12.5px; background: var(--sunk); }
+.issues { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 6px; font-size: 13.5px; }
+.issues li { display: grid; grid-template-columns: 16px minmax(0, 1fr); gap: 6px; }
+.issues li::before { font-weight: 700; }
+.issues li.err::before { content: "✕"; color: var(--err); }
+.issues li.warn::before { content: "!"; color: var(--warn); text-align: center; }
+.issues li.tip::before { content: "i"; color: var(--tip); text-align: center; font-family: var(--f-mono); }
+.issues li.okline::before { content: "✓"; color: var(--ok); }
+.run { font-size: 13px; color: var(--muted); display: flex; flex-direction: column; gap: 4px; }
+.run code { color: var(--ink); background: var(--sunk); padding: 1px 6px; border-radius: 4px; }
+@media (prefers-reduced-motion: no-preference) { button, .chip { transition: border-color .12s, background-color .12s; } }
+</style>
+
+<div class="page">
+<header class="top">
+  <div>
+    <h1>CatForce <span class="ext">.in</span> generator</h1>
+    <p>Build a search file in six steps. The file on the right updates as you type; copy or save it, then run <code>./CatForce search.txt</code>.</p>
+  </div>
+  <div class="btnrow">
+    <button id="btnOpen">Open a .in file</button>
+    <button id="btnExample">Load example</button>
+    <button id="btnReset" class="danger">Start over</button>
+  </div>
+</header>
+
+<div id="resetConfirm" class="notice" hidden>
+  <span>Clear every field and start from an empty search?</span>
+  <button id="resetYes" class="danger small">Clear everything</button>
+  <button id="resetNo" class="small">Keep my work</button>
+</div>
+<div id="exampleNote" class="notice example" hidden>
+  <span>This is an example: a search for Herschel conduits in Conway's Life. Change anything, or press <b>Start over</b> for a blank search.</span>
+</div>
+
+<section id="openPanel" class="step" hidden>
+  <header><span class="num">↥</span><div><h2>Open an existing file</h2><p>Choose a file, or paste its text (a whole .in file, or just some <code>cat</code> lines from a catalyst list).</p></div></header>
+  <input type="file" id="importFile" accept=".in,.txt,text/plain">
+  <textarea id="importBox" rows="6" spellcheck="false" placeholder="rule B3/S23&#10;max-gen 100&#10;pat ...&#10;cat 2o$2o! 20 -1 -1 ."></textarea>
+  <div class="btnrow">
+    <button id="importAll" class="primary">Replace the form with this file</button>
+    <button id="importCats">Add only its catalysts</button>
+    <button id="importClose" class="ghost">Close</button>
+  </div>
+  <div id="importMsg" class="msg"></div>
+</section>
+
+<main class="layout">
+<div class="steps">
+
+  <!-- 1. Rule -->
+  <section class="step" id="s-rule">
+    <header><span class="num">1</span><div><h2>Rule</h2><p>Any Life-like or isotropic non-totalistic (Hensel) rule, or a Golly <code>MAP</code> string. Pasting a Golly pattern in step 2 fills this in from its header.</p></div></header>
+    <label class="fld"><span class="lbl">Rulestring <code>rule</code></span>
+      <input type="text" id="f-rule" data-k="rule" spellcheck="false" autocomplete="off" placeholder="B3/S23">
+    </label>
+    <div id="ruleMsg" class="msg"></div>
+    <div class="chips">
+      <button class="chip" data-rule="B3/S23">Conway's Life</button>
+      <button class="chip" data-rule="B36/S23">HighLife</button>
+      <button class="chip" data-rule="B3ainj4cw5cek6n/S2-in3-ky4enyjtw5injr6cen7c">Cyclotronic</button>
+    </div>
+  </section>
+
+  <!-- 2. Starting pattern -->
+  <section class="step" id="s-pattern">
+    <header><span class="num">2</span><div><h2>Starting pattern</h2><p>Paste the reaction you want catalysts for, straight from Golly (select it, Edit → Copy). Each separate object is simulated: still lifes and oscillators become <b>baits</b> (objects that must be knocked away and rebuilt), everything else is the <b>active pattern</b>.</p></div></header>
+    <textarea id="f-paste" data-k="paste" rows="4" spellcheck="false" placeholder="x = 3, y = 4, rule = B3/S23&#10;o$3o$obo$2bo!"></textarea>
+    <div id="pasteMsg" class="msg"></div>
+    <div id="objs" class="list"></div>
+    <div id="setups" class="list"></div>
+    <div id="patSummary" class="summary"></div>
+    <label class="fld"><span class="lbl">Symmetry <code>symmetry</code></span>
+      <select id="f-sym" data-k="sym"></select>
+      <small>Searches only symmetric arrangements: every catalyst is copied by the same symmetry, and so is the pattern. Paste only one half of a symmetric pattern.</small>
+    </label>
+    <div id="symMsg" class="msg"></div>
+    <details class="more" id="patMore">
+      <summary>Edit the pattern and baits by hand</summary>
+      <div class="body">
+        <div class="inline">
+          <label class="fld grow"><span class="lbl">Active pattern <code>pat</code></span>
+            <textarea id="f-patRaw" data-k="patRaw" data-rle="1" rows="2" spellcheck="false" placeholder="o$3o$obo$2bo!"></textarea></label>
+          <label class="fld"><span class="lbl">x</span><input type="text" id="f-patDx" data-k="patDx" inputmode="numeric" placeholder="0"></label>
+          <label class="fld"><span class="lbl">y</span><input type="text" id="f-patDy" data-k="patDy" inputmode="numeric" placeholder="0"></label>
+        </div>
+        <small class="hint">x, y is the top-left corner on the 64×64 torus: (0,0) is the centre, x grows to the right, y grows downwards.</small>
+        <h3>Baits <span class="opt">must be disturbed, then reappear intact and survive</span></h3>
+        <div id="baits" class="list"></div>
+        <div class="btnrow"><button id="addBait" class="small">Add a bait</button></div>
+      </div>
+    </details>
+  </section>
+
+  <!-- 3. Catalysts -->
+  <section class="step" id="s-cats">
+    <header><span class="num">3</span><div><h2>Catalysts</h2><p>Objects CatForce may place around the pattern. Each one is checked in your rule: a catalyst that is not a still life or an oscillator can never recover, so it is flagged.</p></div></header>
+    <div>
+      <h3 style="margin-bottom:6px">Common catalysts <span class="opt">click to add</span></h3>
+      <div id="lib" class="chips"></div>
+    </div>
+    <label class="fld"><span class="lbl">Or paste catalysts</span>
+      <textarea id="catPaste" rows="3" spellcheck="false" placeholder="A Golly pattern with catalysts spaced apart, or cat lines from a catalyst list"></textarea>
+      <small>Objects at least two cells apart become separate catalysts. Repeats (in any orientation) are skipped.</small>
+    </label>
+    <div class="btnrow"><button id="catPasteGo">Add pasted catalysts</button><span id="catPasteMsg" class="msg"></span></div>
+    <div id="orientFix" class="callout tip" hidden></div>
+    <div id="cats" class="list"></div>
+  </section>
+
+  <!-- 4. Goal -->
+  <section class="step" id="s-goal">
+    <header><span class="num">4</span><div><h2>What counts as a result</h2><p>Without a goal, every arrangement whose catalysts recover is reported, including ones where the reaction simply dies. Describe what the reaction should produce.</p></div></header>
+    <div id="goals" class="list"></div>
+    <div class="btnrow">
+      <button id="addMatch" class="small">An object appears anywhere</button>
+      <button id="addAnd" class="small">A pattern is at an exact spot</button>
+      <button id="addOr" class="small">One of several exact spots</button>
+    </div>
+    <div class="inline">
+      <label class="fld"><span class="lbl">Allow extra cells <code>max-junk</code></span>
+        <input type="text" id="f-maxJunk" data-k="maxJunk" inputmode="numeric" placeholder="any number">
+        <small>Other live cells (not catalysts) allowed while a goal matches. 0 = clean output only.</small></label>
+    </div>
+    <small class="hint">To require an object to be rebuilt, make it a bait in step 2 instead.</small>
+  </section>
+
+  <!-- 5. Search size -->
+  <section class="step" id="s-size">
+    <header><span class="num">5</span><div><h2>Search size</h2><p>These decide how long the search takes. Empty boxes use CatForce's defaults, shown in grey.</p></div></header>
+    <div class="fields" id="sizeFields"></div>
+    <div>
+      <h3 style="margin-bottom:4px">Where catalysts may go <span class="opt"><code>search-area</code> / <code>exclude-area</code></span></h3>
+      <small class="hint">Rectangles x y width height on the torus (shaded on the map). Drag on the map to add one; hold Shift while dragging to exclude. Allowed = all included rectangles minus all excluded ones.</small>
+    </div>
+    <div id="areas" class="list"></div>
+    <div class="btnrow">
+      <button id="addArea" class="small">Include a rectangle</button>
+      <button id="addExclude" class="small">Exclude a rectangle</button>
+      <span class="opt">Leave out a quarter:</span>
+      <button class="small" data-quad="-32 -32 32 32">top-left</button>
+      <button class="small" data-quad="0 -32 32 32">top-right</button>
+      <button class="small" data-quad="-32 0 32 32">bottom-left</button>
+      <button class="small" data-quad="0 0 32 32">bottom-right</button>
+    </div>
+    <details class="more">
+      <summary>More limits</summary>
+      <div class="body">
+        <div class="fields" id="limitFields"></div>
+        <div class="inline">
+          <label class="fld"><span class="lbl">Fit in width <code>fit-in-width-height</code></span><input type="text" id="f-fitW" data-k="fitW" inputmode="numeric" placeholder="no limit"></label>
+          <label class="fld"><span class="lbl">and height</span><input type="text" id="f-fitH" data-k="fitH" inputmode="numeric" placeholder="no limit"></label>
+        </div>
+        <small class="hint">Only keep results whose catalysts all fit in a rectangle this size.</small>
+        <div class="inline">
+          <label class="fld grow"><span class="lbl">Always present <code>also-required</code></span>
+            <textarea id="f-alsoRle" data-k="alsoRle" data-rle="1" rows="2" spellcheck="false" placeholder="cells that must be alive in every generation"></textarea></label>
+          <label class="fld"><span class="lbl">x</span><input type="text" id="f-alsoX" data-k="alsoX" inputmode="numeric" placeholder="0"></label>
+          <label class="fld"><span class="lbl">y</span><input type="text" id="f-alsoY" data-k="alsoY" inputmode="numeric" placeholder="0"></label>
+        </div>
+      </div>
+    </details>
+  </section>
+
+  <!-- 6. Run & output -->
+  <section class="step" id="s-run">
+    <header><span class="num">6</span><div><h2>Running and output</h2><p>File names, stopping conditions and how the search uses your computer.</p></div></header>
+    <div class="fields" id="runFields"></div>
+    <div class="checks">
+      <label class="check"><input type="checkbox" id="f-keepDup" data-k="keepDup"><span>Keep duplicate results <code>keep-duplicates</code><small>By default, results that are mirror images or rotations of each other are kept once.</small></span></label>
+      <label class="check"><input type="checkbox" id="f-keepInteract" data-k="keepInteract"><span>Keep results whose catalysts touch each other <code>keep-interacting</code><small>Off by default: such results are usually two catalysts fused into one object.</small></span></label>
+      <label class="check"><input type="checkbox" id="f-verbose" data-k="verbose"><span>Print every first-catalyst placement <code>verbose</code><small>The old, very long console output.</small></span></label>
+    </div>
+    <label class="fld"><span class="lbl">Include other files <code>include</code></span>
+      <textarea id="f-includes" rows="2" spellcheck="false" placeholder="catlists/The_Tiny_List_of_Catalysts"></textarea>
+      <small>One path per line; their lines are read as if pasted here (for example a catalyst list).</small>
+    </label>
+  </section>
+
+</div>
+
+<aside class="preview">
+  <section class="panel">
+    <h2>Map <span class="opt">64 × 64 torus</span></h2>
+    <canvas id="map" width="384" height="384" role="img" aria-label="Map of the starting pattern and the area where catalysts may be placed"></canvas>
+    <div class="legend">
+      <span><i style="background:var(--cell)"></i>active pattern</span>
+      <span><i style="background:var(--ghost)"></i>symmetric copy</span>
+      <span><i style="background:var(--bait)"></i>bait</span>
+      <span><i style="border:1.5px solid var(--warn)"></i>always present</span>
+      <span><i style="background:var(--area);border:1px solid var(--axis)"></i>catalyst positions</span>
+    </div>
+  </section>
+  <section class="panel">
+    <h2><span>The file</span></h2>
+    <label class="fld"><span class="lbl">File name</span><input type="text" id="fname" value="search.txt" spellcheck="false"></label>
+    <textarea id="out" readonly spellcheck="false" aria-label="Generated input file"></textarea>
+    <div class="btnrow">
+      <button id="copy" class="primary">Copy</button>
+      <button id="save" hidden>Save file</button>
+      <span id="copyMsg" class="msg"></span>
+    </div>
+    <ul id="issues" class="issues"></ul>
+    <div class="run">
+      <span>Check it, then run it:</span>
+      <span><code id="runCheck">./CatForce search.txt --check</code></span>
+      <span><code id="runGo">./CatForce search.txt</code></span>
+    </div>
+  </section>
+</aside>
+</main>
+</div>

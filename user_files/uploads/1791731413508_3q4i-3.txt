@@ -1,0 +1,14 @@
+rule B3/S23-q4i
+max-gen 300
+num-catalyst 3
+stable-interval 15
+pat bo$o$3o! 0 -4
+bait 2o$2o! -3 3
+
+output results.rle
+
+# catalysts
+cat b2o$b2o! 100 0 0 .
+cat 3bo$b3o$o$2o! 100 0 0 *
+cat 3bo$2bobo$3bo2$b5o$o4bo$obo$b2o$5bo$4bobo$3bo2bo$4b2o! 100 0 0 *
+

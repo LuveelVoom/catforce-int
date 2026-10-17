@@ -1,0 +1,21 @@
+rule B36/S23
+max-gen 400
+num-catalyst 2
+stable-interval 15
+pat bo$o$3o! 0 -4
+
+output highlife.rle
+max-time 2h
+
+# catalysts
+cat b2o$o2bo$2obo$3bob2o$3bo2bo$4b2o! 20 -3 -3 x
+cat 2b2o$2bo$obo$2o! 20 -2 -2 *
+cat 2o$2o! 20 -1 -1 .
+cat bo$obo$bo! 20 -1 -1 .
+cat 5b2o$2b2o2bo$bo2b2o$bobo$2bob2o$obobobo$2o3bo! 20 -3 -3 +
+cat 6b2o$b2obo2bo$b2ob2o2$b2ob2o$2bobobo$o4bo$2o! 20 -4 -4 +
+cat bo$obo$obo$bo! 20 -1 -2 /
+cat bo$obo$o2bo$b2o! 20 -2 -2 +
+cat 7b2o$8bo$5b3o$5bo2$b2o$o2bob2o$o2bob2o$b2o2$5bo$5b3o$8bo$7b2o! 20 -4 -7 +
+cat 2b2o$3bo$2bo$2b2o2$2b2o$2bobo$3bo$3o$o! 20 -2 -5 *
+cat 2o$obo$bo! 20 -1 -1 +

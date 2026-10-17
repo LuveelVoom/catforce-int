@@ -1,0 +1,10 @@
+.DS_Store
+__MACOSX/
+# build output and run caches
+CatForce/CatForce
+CatForce/maskpack3-*
+*.resume
+*.profraw
+*.profdata
+# saved forum page (contains a login session id)
+reference/

@@ -1,0 +1,1279 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>CatForce .in file generator</title>
+<style>
+:root {
+  box-sizing: border-box;
+  padding-top: env(safe-area-inset-top, 0px);
+  padding-bottom: env(safe-area-inset-bottom, 0px);
+  --bg: #f5f5f1; --card: #ffffff; --ink: #1d1d1b; --muted: #64645e; --line: #dadad2;
+  --accent: #2b6cb0; --accent-ink: #ffffff; --ok: #1f7a3d; --warn: #96620a; --err: #b42318;
+  --cell: #1d1d1b; --grid: #ebebe4; --axis: #b9b9ae; --area: rgba(43,108,176,.14); --areaLine: #2b6cb0;
+  --field: #fbfbf8; --mono: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #141413; --card: #1e1e1c; --ink: #ecece6; --muted: #9a9a92; --line: #3a3a36;
+    --accent: #6ea8e6; --accent-ink: #101010; --ok: #5fcf85; --warn: #e0a84a; --err: #ff8a7a;
+    --cell: #ecece6; --grid: #2a2a27; --axis: #55554f; --area: rgba(110,168,230,.16); --areaLine: #6ea8e6;
+    --field: #181816;
+  }
+}
+:root[data-theme="dark"] {
+  --bg: #141413; --card: #1e1e1c; --ink: #ecece6; --muted: #9a9a92; --line: #3a3a36;
+  --accent: #6ea8e6; --accent-ink: #101010; --ok: #5fcf85; --warn: #e0a84a; --err: #ff8a7a;
+  --cell: #ecece6; --grid: #2a2a27; --axis: #55554f; --area: rgba(110,168,230,.16); --areaLine: #6ea8e6;
+  --field: #181816;
+}
+html { scroll-padding-top: env(safe-area-inset-top, 0px); }
+* { box-sizing: border-box; }
+body {
+  margin: 0; background: var(--bg); color: var(--ink);
+  font: 15px/1.45 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+}
+header { padding: 18px 16px 6px; max-width: 1280px; margin: 0 auto; }
+h1 { font-size: 22px; margin: 0 0 2px; }
+header p { margin: 0; color: var(--muted); }
+.wrap { max-width: 1280px; margin: 0 auto; padding: 8px 16px 40px; }
+details.help { background: var(--card); border: 1px solid var(--line); border-radius: 10px; padding: 10px 14px; margin: 10px 0 14px; }
+details.help summary { cursor: pointer; font-weight: 600; }
+details.help ol { margin: 8px 0 4px 18px; padding: 0; }
+details.help li { margin: 4px 0; }
+details.help p { margin: 6px 0; }
+.grid { display: grid; grid-template-columns: minmax(0, 1fr) minmax(320px, 440px); gap: 16px; align-items: start; }
+@media (max-width: 900px) { .grid { grid-template-columns: minmax(0, 1fr); } }
+.card { background: var(--card); border: 1px solid var(--line); border-radius: 10px; padding: 12px 14px; margin-bottom: 12px; }
+.card > h2 { font-size: 16px; margin: 0 0 2px; }
+.card > .sub { color: var(--muted); font-size: 13px; margin: 0 0 10px; }
+.fields { display: grid; grid-template-columns: repeat(auto-fill, minmax(190px, 1fr)); gap: 10px 12px; }
+label.f { display: flex; flex-direction: column; gap: 3px; font-size: 13px; font-weight: 600; }
+label.f small { font-weight: 400; color: var(--muted); font-size: 12px; line-height: 1.3; }
+input[type=text], input[type=number], select, textarea {
+  width: 100%; padding: 6px 8px; border: 1px solid var(--line); border-radius: 6px;
+  background: var(--field); color: var(--ink); font: inherit; font-weight: 400;
+}
+textarea { font-family: var(--mono); font-size: 12.5px; resize: vertical; }
+input:focus, select:focus, textarea:focus { outline: 2px solid var(--accent); outline-offset: -1px; }
+.row { display: flex; gap: 8px; flex-wrap: wrap; align-items: flex-end; }
+.row > * { flex: 1 1 70px; }
+.row > .wide { flex: 3 1 220px; }
+button {
+  font: inherit; padding: 6px 12px; border-radius: 6px; border: 1px solid var(--line);
+  background: var(--card); color: var(--ink); cursor: pointer;
+}
+button:hover { border-color: var(--accent); }
+button.primary { background: var(--accent); color: var(--accent-ink); border-color: var(--accent); font-weight: 600; }
+button.small { padding: 2px 8px; font-size: 12.5px; }
+button.danger:hover { border-color: var(--err); color: var(--err); }
+.item { border: 1px solid var(--line); border-radius: 8px; padding: 10px; margin: 8px 0; background: var(--field); }
+.item .head { display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px; font-weight: 600; font-size: 13px; }
+.item .head .btns { display: flex; gap: 6px; }
+.catgrid { display: grid; grid-template-columns: minmax(0, 1fr) 150px; gap: 10px; }
+@media (max-width: 520px) { .catgrid { grid-template-columns: minmax(0, 1fr); } }
+canvas.thumb { width: 150px; height: 110px; border: 1px solid var(--line); border-radius: 6px; background: var(--card); }
+.thumbcap { font-size: 11px; color: var(--muted); margin-top: 2px; }
+details.adv { margin-top: 8px; }
+details.adv summary { cursor: pointer; font-size: 13px; color: var(--accent); }
+.flags { display: flex; flex-wrap: wrap; gap: 4px 14px; margin: 8px 0; font-size: 13px; }
+.flags label { display: inline-flex; gap: 5px; align-items: center; cursor: pointer; }
+.flags small { color: var(--muted); }
+.sub3 { margin: 8px 0 2px; font-size: 12.5px; font-weight: 600; }
+.sub3 small { font-weight: 400; color: var(--muted); }
+.msg { font-size: 13px; margin: 4px 0; }
+.msg.err { color: var(--err); } .msg.warn { color: var(--warn); } .msg.ok { color: var(--ok); }
+.msg button { margin-left: 6px; }
+aside.out { position: sticky; top: calc(env(safe-area-inset-top, 0px) + 12px); }
+@media (max-width: 900px) { aside.out { position: static; } }
+#out { min-height: 300px; max-height: 60vh; font-size: 12.5px; white-space: pre; overflow: auto; }
+.actions { display: flex; flex-wrap: wrap; gap: 8px; margin: 8px 0; }
+.issues { margin-top: 6px; }
+.issues ul { margin: 2px 0 0 18px; padding: 0; font-size: 13px; }
+.issues li.err { color: var(--err); } .issues li.warn { color: var(--warn); }
+.mapwrap canvas { width: 100%; max-width: 384px; aspect-ratio: 1; border: 1px solid var(--line); border-radius: 6px; background: var(--card); display: block; }
+.legend { font-size: 12px; color: var(--muted); margin-top: 4px; }
+code { font-family: var(--mono); font-size: 0.92em; background: var(--field); border: 1px solid var(--line); border-radius: 4px; padding: 0 4px; }
+.presets { display: flex; gap: 6px; flex-wrap: wrap; margin-top: 6px; }
+.objrow { display: flex; gap: 10px; align-items: center; padding: 6px 0; border-top: 1px solid var(--line); }
+.objrow:first-child { border-top: none; }
+.objrow canvas { width: 72px; height: 72px; flex: 0 0 72px; border: 1px solid var(--line); border-radius: 6px; background: var(--card); }
+.objrow .meta { flex: 1 1 auto; font-size: 13px; }
+.objrow .meta b { font-weight: 600; }
+.objrow select { width: auto; flex: 0 0 auto; }
+.setupbox { border: 1px solid var(--line); border-radius: 8px; padding: 8px 10px; margin: 6px 0; background: var(--field); font-size: 13px; }
+.setupbox code { word-break: break-all; }
+hr { border: none; border-top: 1px solid var(--line); margin: 10px 0; }
+.toolbar { display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 12px; }
+</style>
+</head>
+<body>
+<header>
+  <h1>CatForce <code>.in</code> file generator</h1>
+  <p>Fill in the form, copy the result into a file, run <code>./CatForce yourfile.in</code>. Works for Conway's Life and INT rules.</p>
+</header>
+
+<div class="wrap">
+<details class="help" open>
+  <summary>Instructions (click to hide)</summary>
+  <ol>
+    <li><b>Rule</b>: type a Life-like / Hensel INT rulestring (e.g. <code>B3/S23</code>, <code>B2ei3aeikqr/S2-a3</code>) or a Golly <code>MAP…</code> string. Rules with B0 are not supported. Pasting an RLE from Golly also offers its rule.</li>
+    <li><b>Auto-split</b> (optional): paste a whole pattern (e.g. several glider + still-life test cases) and the page simulates each object under your rule, makes still lifes and oscillators baits, and splits independent clusters into separate setups you can load or export all at once.</li>
+    <li><b>Active pattern</b>: paste the RLE of the thing you want to find catalysts for (Golly: select it, Edit → Copy). Headers and line breaks are cleaned automatically, since CatForce only accepts <code>o b $ !</code> and digits. The offset is where the pattern's top-left corner sits; the map shows it.</li>
+    <li><b>Search settings</b>: leave a box empty to use CatForce's default. The search area is a set of rectangles <code>x y w h</code> in torus coordinates (centre = 0,0; x right, y down; edges −32…31): all "include" rectangles are combined and all "exclude" rectangles are removed, so you can leave out a quadrant or any other shape made of rectangles.</li>
+    <li><b>Catalysts</b>: add each catalyst's RLE and how long (in generations) it may be missing. <code>dx dy</code> is the offset of its top-left corner; symmetry transforms rotate/reflect about the origin, so for <code>+ x / * |</code> catalysts, use the thumbnail's crosshair to put the centre of symmetry on the origin (a 3×3 boat/block-like shape usually wants <code>-1 -1</code>).</li>
+    <li>You can paste existing <code>cat …</code> lines (e.g. from the repo's <code>catlists/</code>) or a whole old <code>.in</code> file into <b>Import</b>.</li>
+    <li><b>Bait</b> (optional): an object added to the starting pattern that must be disturbed and later reappear intact. See the card for details.</li>
+    <li><b>Run options</b>: <code>threads</code> uses several cores, <code>max-time</code>/<code>max-results</code> stop a long search cleanly, <code>include</code> loads a catalyst list from a file instead of pasting it. You can also run <code>./CatForce file.in --check</code> first to see a summary without searching.</li>
+    <li><b>Filters</b> (optional) restrict results to solutions that produce a given pattern.</li>
+    <li>Press <b>Copy</b> (or <b>Save</b>), save as a text file, then run <code>./CatForce file.in</code>. CatForce does not care about the file extension. Open the result RLE in Golly with the same rule set.</li>
+  </ol>
+  <p style="color:var(--muted);font-size:13px">Field hints come from CatForce's README; options not in the README are marked "(from source)". Orange/red messages next to the output tell you what to fix; the output is still generated.</p>
+</details>
+
+<div class="toolbar">
+  <button id="btnExample">Load example</button>
+  <button id="btnReset" class="danger">Reset all</button>
+</div>
+
+<div class="grid">
+<div class="form">
+
+  <section class="card" id="cardRule">
+    <h2>Rule</h2>
+    <p class="sub">Written as a <code>rule</code> line; empty means B3/S23 (Conway).</p>
+    <label class="f">Rulestring
+      <input type="text" id="rule" data-bind="rule" spellcheck="false" autocomplete="off" placeholder="B3/S23">
+    </label>
+    <div id="ruleMsg" class="msg"></div>
+    <div id="ruleDetect" class="msg"></div>
+    <div class="presets">
+      <button class="small" data-rule="B3/S23">Conway B3/S23</button>
+      <button class="small" data-rule="B36/S23">HighLife B36/S23</button>
+      <button class="small" data-rule="B3ainj4cw5cek6n/S2-in3-ky4enyjtw5injr6cen7c">Cyclotronic</button>
+    </div>
+  </section>
+
+  <section class="card">
+    <h2>Search settings</h2>
+    <p class="sub">Empty = CatForce default (shown as placeholder).</p>
+    <div class="fields" id="settings"></div>
+    <div class="row" style="margin-top:10px">
+      <label class="f">Time limit <code>max-time</code>
+        <input type="text" data-bind="maxTime" placeholder="none" spellcheck="false">
+        <small>Stop and save after this long: 90, 15m, 2h ...</small>
+      </label>
+      <label class="f wide">Solution list <code>output-list</code>
+        <input type="text" data-bind="outputList" placeholder="(none)" spellcheck="false">
+        <small>Text file listing every solution's catalyst shapes and positions.</small>
+      </label>
+    </div>
+    <label class="f" style="margin-top:10px">Include files <code>include</code> (one path per line)
+      <textarea rows="2" id="includes" spellcheck="false" placeholder="catlists/The_Tiny_List_of_Catalysts"></textarea>
+      <small>Pulls in the lines of another file, e.g. a catalyst list. Paths are relative to this .in file or the working directory.</small>
+    </label>
+    <label class="flags" style="margin-top:8px"><span><input type="checkbox" id="keepDup"> keep duplicate solutions <small>(<code>keep-duplicates yes</code>; by default identical or mirror/rotated copies are removed)</small></span></label>
+    <hr>
+    <div class="row">
+      <div class="f wide" style="font-weight:600;font-size:13px">Search area <code>search-area</code> / <code>exclude-area</code>
+        <div id="areas"></div>
+        <div class="actions" style="margin:6px 0 2px">
+          <button class="small" id="addArea">+ Add rectangle</button>
+          <button class="small" id="addExclude">+ Exclude rectangle</button>
+        </div>
+        <div class="sub3" style="margin:4px 0 2px"><small>Leave one quadrant out (of the whole 64x64 torus, origin at its centre):</small></div>
+        <div class="presets">
+          <button class="small" data-quad="-32 -32 32 32">top-left</button>
+          <button class="small" data-quad="0 -32 32 32">top-right</button>
+          <button class="small" data-quad="-32 0 32 32">bottom-left</button>
+          <button class="small" data-quad="0 0 32 32">bottom-right</button>
+        </div>
+        <small style="font-weight:400;color:var(--muted)">Positions allowed = all "include" rectangles combined, minus all "exclude" rectangles (no include rectangle = CatForce default -30 -30 60 60). This restricts where a catalyst's origin point (set by its dx dy) may go. x right, y down, edges -32...31.</small>
+      </div>
+      <label class="f wide">Global symmetry <code>symmetry</code>
+        <select id="sym" data-bind="sym"></select>
+        <small>Symmetry of the whole pattern; catalysts get the same symmetry automatically. Your active pattern must already have it.</small>
+      </label>
+    </div>
+    <div class="row" style="margin-top:10px">
+      <label class="f">Fit in width × height <code>fit-in-width-height</code>
+        <div class="row" style="flex-wrap:nowrap"><input type="text" data-bind="fitW" placeholder="w"><input type="text" data-bind="fitH" placeholder="h"></div>
+        <small>Only keep solutions whose catalysts all fit in a w×h rectangle.</small>
+      </label>
+      <label class="f">Output file <code>output</code>
+        <input type="text" data-bind="output" placeholder="results.rle" spellcheck="false">
+        <small>Where solutions are saved (RLE).</small>
+      </label>
+      <label class="f">Full report <code>full-report</code>
+        <input type="text" data-bind="fullReport" placeholder="(none)" spellcheck="false">
+        <small>RLE file of solutions ignoring all pattern filters.</small>
+      </label>
+    </div>
+  </section>
+
+  <section class="card">
+    <h2>Auto-split a whole pattern <small style="font-weight:400;color:var(--muted)">(optional)</small></h2>
+    <p class="sub">Paste a complete pattern from Golly (with its header). Each separate object is simulated alone under the current rule: <b>still lifes and oscillators become baits</b>, everything that moves or evolves stays in the <b>active pattern</b>. Change any object's role below. Objects that are close together form one setup, so a file with several independent test cases splits into several searches.</p>
+    <label class="f">Pattern RLE
+      <textarea rows="4" id="splitRle" spellcheck="false" placeholder="x = 27, y = 37, rule = B3/S23-q4i&#10;5bo15bo$5bobo13bobo$..."></textarea>
+    </label>
+    <div class="row" style="margin-top:8px;align-items:center">
+      <label class="f" style="flex:0 0 220px">Group objects closer than (cells)
+        <input type="text" id="splitGap" value="6" inputmode="numeric" style="width:80px">
+      </label>
+      <label class="flags" style="flex:1 1 200px"><span><input type="checkbox" id="splitMerge"> keep everything as one setup</span></label>
+      <button id="splitGo" class="primary" style="flex:0 0 auto">Analyse</button>
+    </div>
+    <div id="splitMsg" class="msg"></div>
+    <div id="splitObjs"></div>
+    <div id="splitSetups"></div>
+  </section>
+
+  <section class="card">
+    <h2>Active pattern</h2>
+    <p class="sub">The pattern the catalysts react to. Gray box on the map = search area, blue crosshair = origin (0,0).</p>
+    <div class="row">
+      <label class="f wide">RLE <code>pat</code>
+        <textarea rows="3" data-bind="patRaw" data-rle="1" spellcheck="false" placeholder="paste RLE here, e.g. 2bo$b3o$o3bo$b3o$2bo!"></textarea>
+        <small id="patInfo"></small>
+      </label>
+      <label class="f">Offset dx
+        <input type="text" data-bind="patDx" inputmode="numeric" placeholder="0">
+      </label>
+      <label class="f">dy
+        <input type="text" data-bind="patDy" inputmode="numeric" placeholder="0">
+      </label>
+    </div>
+    <div class="mapwrap" style="margin-top:10px">
+      <canvas id="map" width="384" height="384"></canvas>
+      <div class="legend">64×64 torus, each square = 1 cell. Dark = active pattern at its offset, blue cells = bait, shaded = allowed catalyst positions.</div>
+    </div>
+    <div class="row" style="margin-top:10px">
+      <label class="f wide">Also required <code>also-required rle x y</code>
+        <textarea rows="2" data-bind="alsoRle" data-rle="1" spellcheck="false" placeholder="(optional) cells that must be present in every generation"></textarea>
+        <small>Require this pattern to be present in every generation.</small>
+      </label>
+      <label class="f">x<input type="text" data-bind="alsoX" placeholder="0"></label>
+      <label class="f">y<input type="text" data-bind="alsoY" placeholder="0"></label>
+    </div>
+  </section>
+
+  <section class="card">
+    <h2>Bait <small style="font-weight:400;color:var(--muted)">(optional)</small></h2>
+    <p class="sub">An object added to the starting pattern that must be disturbed at some point and later <b>reappear</b> (cells alive, surrounding cells dead) and survive. Oscillators are accepted in any phase. All baits must succeed together with the catalysts.</p>
+    <div id="baits"></div>
+    <div class="actions"><button id="addBait">+ Add bait</button></div>
+  </section>
+
+  <section class="card">
+    <h2>Catalysts</h2>
+    <p class="sub">One <code>cat</code> line each. CatForce tries all placements and orientations allowed by the symmetry character.</p>
+    <div id="cats"></div>
+    <div class="actions">
+      <button id="addCat" class="primary">+ Add catalyst</button>
+    </div>
+    <details class="adv">
+      <summary>Import <code>cat</code> lines or a whole .in file</summary>
+      <textarea id="importBox" rows="5" spellcheck="false" placeholder="Paste cat lines or an entire .in file here"></textarea>
+      <div class="actions">
+        <button id="importAdd">Add pasted <code>cat</code> lines</button>
+        <button id="importAll">Replace everything with pasted .in</button>
+      </div>
+      <div id="importMsg" class="msg"></div>
+    </details>
+  </section>
+
+  <section class="card">
+    <h2>Filters <small style="font-weight:400;color:var(--muted)">(optional)</small></h2>
+    <p class="sub"><b>and</b>: every one must match. <b>or</b>: at least one must match. <b>match</b>: pattern may appear anywhere. A generation range only succeeds after every catalyst has interacted.</p>
+    <div id="filters"></div>
+    <div class="actions"><button id="addFilter">+ Add filter</button></div>
+    <div class="row">
+      <label class="f">max-junk
+        <input type="text" data-bind="maxJunk" placeholder="off">
+        <small>Max non-matching, non-catalyst population when using filters.</small>
+      </label>
+    </div>
+  </section>
+
+</div>
+
+<aside class="out">
+  <section class="card">
+    <h2>Generated .in</h2>
+    <label class="f" style="margin:6px 0">File name for Save
+      <input type="text" id="fname" value="search" spellcheck="false">
+    </label>
+    <textarea id="out" readonly spellcheck="false"></textarea>
+    <div class="actions">
+      <button id="copy" class="primary">Copy</button>
+      <button id="save" hidden>Save as .txt</button>
+    </div>
+    <div id="copyMsg" class="msg"></div>
+    <div class="issues" id="issues"></div>
+    <hr>
+    <div style="font-size:13px;color:var(--muted)">
+      Run: <code>make</code> (once), then <code>./CatForce search.in</code> (any file name works).
+    </div>
+  </section>
+</aside>
+</div>
+</div>
+
+<script>
+/*CORE_START*/
+const SYMS = [
+  ['C1', 'None (C1)'],
+  ['D2|', 'D2| : mirror across x = 0'], ['D2-', 'D2- : mirror across y = 0'],
+  ['D2\\', 'D2\\ : diagonal mirror y = x'], ['D2/', 'D2/ : diagonal mirror y = −x'],
+  ['D2|even', 'D2|even : mirror, even width'], ['D2-even', 'D2-even : mirror, even height'],
+  ['C2', 'C2 : 180° rotation, odd × odd box'], ['C2even', 'C2even : 180°, even × even box'],
+  ['C2|even', 'C2|even : 180°, even width'], ['C2-even', 'C2-even : 180°, even height'],
+  ['C4', 'C4 : 90° rotations, odd'], ['C4even', 'C4even : 90° rotations, even'],
+  ['D4+', 'D4+ : orthogonal mirrors + rotations, odd'], ['D4+even', 'D4+even : even × even'],
+  ['D4+|even', 'D4+|even : even width'], ['D4+-even', 'D4+-even : even height'],
+  ['D4x', 'D4x : diagonal mirrors + rotations, odd'], ['D4xeven', 'D4xeven : diagonal, even'],
+  ['D8', 'D8 : all 8 symmetries, odd'], ['D8even', 'D8even : all 8, even']
+];
+const CAT_SYMS = [
+  ['.', '.  none'], ['|', '|  mirror by y'], ['-', '-  mirror by x'],
+  ['+', '+  all 90° rotations (D2- / D2/ invariant, e.g. boat)'], ['x', 'x  for 180°-symmetric catalysts'],
+  ['/', '/  diagonal mirror'], ['\\', '\\  other diagonal mirror (from source)'], ['*', '*  all 8 transformations']
+];
+const SETTINGS = [
+  ['maxGen', 'max-gen', '250', 'Overall maximum generation.'],
+  ['startGen', 'start-gen', '1', 'Earliest generation the first encounter may occur.'],
+  ['lastGen', 'last-gen', 'max-gen − 1', 'Latest generation the first encounter may occur.'],
+  ['numCat', 'num-catalyst', '2', 'Number of catalysts to place (1 to 5).'],
+  ['numTransparent', 'num-transparent', '100', 'How many catalysts marked "transparent" may appear.'],
+  ['stable', 'stable-interval', '15', 'Generations catalysts must stay untouched to count as stable.'],
+  ['stopAfter', 'stop-after-cats-destroyed', 'off', 'Give up on a candidate this many generations after a catalyst fails to recover (from source).'],
+  ['maxCatSize', 'max-category-size', 'unlimited', 'Max output row length before more solutions are dropped.'],
+  ['outputGap', 'output-gap', '10', 'Empty cells between solutions in the output RLE.'],
+  ['threads', 'threads', 'all cores', 'Worker threads (default: all cores; 1 = single-threaded). Results are the same, only faster.'],
+  ['maxResults', 'max-results', 'unlimited', 'Stop after this many solutions.']
+];
+const LETTERS = {0:'c',1:'ce',2:'cekain',3:'cekainyqjr',4:'cekainyqjrtwz',5:'cekainyqjr',6:'cekain',7:'ce',8:'c'};
+
+function defaultState() {
+  return {
+    rule: 'B3/S23', maxGen: '100', startGen: '', lastGen: '', numCat: '2', numTransparent: '', stable: '15',
+    stopAfter: '', maxCatSize: '', outputGap: '', keepDup: false, threads: '', maxResults: '', maxTime: '', outputList: '', includes: [], areas: [{mode: 'include', x: '-30', y: '-30', w: '60', h: '60'}], sym: 'C1',
+    patRaw: '', patDx: '0', patDy: '0', output: 'results.rle', fullReport: '',
+    fitW: '', fitH: '', alsoRle: '', alsoX: '0', alsoY: '0', maxJunk: '',
+    filters: [], cats: [], baits: []
+  };
+}
+function newCat() {
+  return {
+    rle: '', maxActive: '100', dx: '0', dy: '0', sym: '.',
+    forbidden: [], req: {rle:'', x:'0', y:'0'}, anti: {rle:'', x:'0', y:'0'}, locus: {rle:'', x:'0', y:'0'},
+    transparent: false, mustinclude: false, checkRecovery: false, sacrificial: false, isBlinker: false, period: ''
+  };
+}
+function newArea(mode) { return {mode: mode || 'include', x: '', y: '', w: '', h: ''}; }
+function newBait() { return {rle: '', x: '0', y: '0', survive: '', absent: ''}; }
+function newFilter() { return {type: 'andfilter', gen: '1-100', rle: '', dx: '0', dy: '0'}; }
+
+// Cleans a pasted Golly RLE into the single-token form CatForce requires.
+function cleanRle(raw) {
+  const out = {rle: '', rule: null, error: null};
+  if (!raw) return out;
+  const body = [];
+  for (const ln of String(raw).split(/\r?\n/)) {
+    const t = ln.trim();
+    if (!t || t[0] === '#') continue;
+    if (/^x\s*=/i.test(t)) {
+      const m = t.match(/rule\s*=\s*([^\s,]+)/i);
+      if (m) out.rule = m[1];
+      continue;
+    }
+    body.push(t);
+  }
+  let s = body.join('').replace(/\s+/g, '');
+  const bang = s.indexOf('!');
+  if (bang >= 0) s = s.slice(0, bang + 1);
+  const bad = s.replace(/[0-9obB$!]/g, '');
+  if (bad) { out.error = "unsupported character '" + bad[0] + "' (CatForce reads only o, b, $, digits and !)"; }
+  s = s.replace(/B/g, 'b');
+  if (s && !s.endsWith('!')) s += '!';
+  out.rle = s;
+  return out;
+}
+function decodeRle(s) {
+  const cells = []; let x = 0, y = 0, n = 0;
+  for (const ch of s) {
+    if (ch >= '0' && ch <= '9') { n = Math.min(n * 10 + (+ch), 100000); }
+    else if (ch === 'o') { n = n || 1; if (n > 512) n = 512; for (let i = 0; i < n; i++) cells.push([x + i, y]); x += n; n = 0; }
+    else if (ch === 'b') { n = n || 1; x += n; n = 0; }
+    else if (ch === '$') { n = n || 1; y += n; x = 0; n = 0; }
+    else if (ch === '!') break;
+  }
+  let w = 0, h = 0;
+  for (const [cx, cy] of cells) { if (cx + 1 > w) w = cx + 1; if (cy + 1 > h) h = cy + 1; }
+  return {cells, w, h};
+}
+
+// Validates a rule with the same tables the auto-split uses (they match the
+// C++ program's tables exactly). Returns {ok, error, note}.
+function checkRule(str) {
+  const r = String(str || '').replace(/\s+/g, '');
+  if (!r) return {ok: true, note: 'empty: CatForce uses B3/S23'};
+  const R = ruleTables(r);
+  if (!R.ok) return {ok: false, error: R.error};
+  const pop = m => { let c = 0; for (; m; m &= m - 1) c++; return c; };
+  let life = true, iso = true;
+  for (let m = 0; m < 256; m++) {
+    if (R.birth[m] !== (pop(m) === 3 ? 1 : 0) || R.survive[m] !== ((pop(m) === 2 || pop(m) === 3) ? 1 : 0)) life = false;
+  }
+  if (/^map/i.test(r)) {
+    // isotropic = invariant under the 8 rotations/reflections of the neighbourhood
+    const pos = [[-1,-1],[0,-1],[1,-1],[-1,0],[1,0],[-1,1],[0,1],[1,1]];
+    const bitOf = (x, y) => 7 - pos.findIndex(p => p[0] === x && p[1] === y);
+    const maps = [([x, y]) => [-y, x], ([x, y]) => [-x, y]];
+    for (const f of maps) for (let m = 0; m < 256 && iso; m++) {
+      let t = 0;
+      pos.forEach(([x, y]) => { if (m & (1 << bitOf(x, y))) { const [u, v] = f([x, y]); t |= 1 << bitOf(u, v); } });
+      if (R.birth[m] !== R.birth[t] || R.survive[m] !== R.survive[t]) iso = false;
+    }
+  }
+  if (life) return {ok: true, note: "Conway's Life: uses the fast stepper"};
+  if (/^map/i.test(r)) return {ok: true, note: iso ? 'Golly MAP rule (isotropic)' : 'Golly MAP rule, not isotropic: rotated or mirrored catalysts may behave differently, and duplicate removal by symmetry is off'};
+  return {ok: true, note: 'valid INT rule (slower table stepper)'};
+}
+
+const isInt = v => /^-?\d+$/.test(String(v).trim());
+
+function build(S) {
+  const L = [], issues = [];
+  const err = m => issues.push({t: 'err', m}), warn = m => issues.push({t: 'warn', m});
+  const num = (kw, v) => {
+    v = String(v).trim();
+    if (!v) return;
+    if (!isInt(v) || (+v < 0 && kw !== 'search-area')) { err(kw + ': "' + v + '" must be a non-negative whole number'); return; }
+    L.push(kw + ' ' + v);
+  };
+  const rleOf = (raw, what) => {
+    const c = cleanRle(raw);
+    if (c.error) err(what + ': ' + c.error);
+    return c.rle;
+  };
+
+  // rule
+  const rule = S.rule.replace(/\s+/g, '');
+  const rc = checkRule(rule);
+  if (!rc.ok) err('Rule: ' + rc.error);
+  if (rule) L.push('rule ' + rule);
+
+  // numbers
+  for (const [k, kw] of SETTINGS) num(kw, S[k]);
+  if (S.keepDup) L.push('keep-duplicates yes');
+  if (String(S.maxTime).trim()) {
+    if (!/^\d+[smhd]?$/i.test(String(S.maxTime).trim())) err('max-time must look like 90, 90s, 15m, 2h or 1d');
+    else L.push('max-time ' + String(S.maxTime).trim());
+  }
+  if (S.outputList.trim()) L.push('output-list ' + S.outputList.trim().replace(/\s+/g, '_'));
+  S.includes.map(x => x.trim()).filter(Boolean).forEach(x => L.push('include ' + x));
+  const g = k => (S[k] + '').trim() === '' ? null : +S[k];
+  const maxGen = g('maxGen') ?? 250, startGen = g('startGen') ?? 1;
+  const lastGen = g('lastGen') ?? (maxGen - 1);
+  if (startGen > lastGen) warn('start-gen (' + startGen + ') is after last-gen (' + lastGen + '): nothing can be found');
+  if (lastGen >= maxGen) warn('last-gen should be below max-gen');
+  const nc = g('numCat') ?? 2;
+  if (nc > 5) err('num-catalyst ' + nc + ' is not supported (CatForce allows at most 5)');
+  else if (nc < 1) err('num-catalyst must be at least 1');
+  else if (S.cats.length && nc > 4) warn('num-catalyst ' + nc + ' can take a very long time');
+
+  // search area: union of 'include' rectangles minus 'exclude' rectangles
+  let nInc = 0;
+  S.areas.forEach((r, i) => {
+    const v = [r.x, r.y, r.w, r.h].map(t => String(t).trim());
+    if (v.every(t => t === '')) return;
+    const n = (r.mode === 'exclude' ? 'Excluded area ' : 'Search area ') + (i + 1);
+    if (v.some(t => !isInt(t))) { err(n + ' needs four whole numbers: x y w h'); return; }
+    const [x, y, w, h] = v.map(Number);
+    if (w <= 0 || h <= 0) { err(n + ': width and height must be positive'); return; }
+    if (r.mode !== 'exclude') {
+      nInc++;
+      if (x < -32 || y < -32 || x + w > 32 || y + h > 32) warn(n + ' extends past the 64x64 torus (-32...31)');
+    }
+    L.push((r.mode === 'exclude' ? 'exclude-area ' : 'search-area ') + v.join(' '));
+  });
+
+  if (S.sym && S.sym !== 'C1') L.push('symmetry ' + S.sym);
+
+  // pattern
+  const pat = rleOf(S.patRaw, 'Active pattern');
+  if (!pat) err('Active pattern is missing (CatForce needs a pat line)');
+  else {
+    if (!isInt(S.patDx) || !isInt(S.patDy)) err('Active pattern offset must be whole numbers');
+    else L.push('pat ' + pat + ' ' + S.patDx.trim() + ' ' + S.patDy.trim());
+  }
+  if (S.output.trim()) L.push('output ' + S.output.trim().replace(/\s+/g, '_'));
+  if (S.fullReport.trim()) L.push('full-report ' + S.fullReport.trim().replace(/\s+/g, '_'));
+  if (S.fitW.trim() || S.fitH.trim()) {
+    if (!isInt(S.fitW) || !isInt(S.fitH)) err('fit-in-width-height needs both w and h');
+    else L.push('fit-in-width-height ' + S.fitW.trim() + ' ' + S.fitH.trim());
+  }
+  const also = rleOf(S.alsoRle, 'also-required');
+  if (also) {
+    if (!isInt(S.alsoX) || !isInt(S.alsoY)) err('also-required offsets must be whole numbers');
+    else L.push('also-required ' + also + ' ' + S.alsoX.trim() + ' ' + S.alsoY.trim());
+  }
+  num('max-junk', S.maxJunk);
+
+  // baits
+  if (S.baits.length > 8) err('At most 8 bait lines are supported');
+  S.baits.forEach((b, i) => {
+    const n = 'Bait ' + (i + 1);
+    const rle = rleOf(b.rle, n);
+    if (!rle) { err(n + ': RLE is empty'); return; }
+    if (!isInt(b.x) || !isInt(b.y)) { err(n + ': x/y must be whole numbers'); return; }
+    let line = 'bait ' + rle + ' ' + b.x.trim() + ' ' + b.y.trim();
+    for (const [k, v] of [['survive', b.survive], ['absent', b.absent]]) {
+      const t = String(v).trim();
+      if (!t) continue;
+      if (!/^\d+$/.test(t)) { err(n + ': ' + k + ' must be a non-negative whole number'); return; }
+      line += ' ' + k + ' ' + t;
+    }
+    L.push(line);
+  });
+
+  // filters
+  S.filters.forEach((f, i) => {
+    const n = 'Filter ' + (i + 1);
+    const rle = rleOf(f.rle, n);
+    const gen = f.gen.trim();
+    if (!rle) { err(n + ': pattern is empty'); return; }
+    if (!/^\d+(-\d+)?$/.test(gen)) { err(n + ': generation must be a number like 50 or a range like 1-100'); return; }
+    if (f.type === 'match') { L.push('match ' + gen + ' ' + rle); return; }
+    if (!isInt(f.dx) || !isInt(f.dy)) { err(n + ': dx/dy must be whole numbers'); return; }
+    L.push(f.type + ' ' + gen + ' ' + rle + ' ' + f.dx.trim() + ' ' + f.dy.trim());
+  });
+
+  // catalysts
+  if (!S.cats.length && !S.includes.some(x => x.trim())) err('Add at least one catalyst (or an include line)');
+  if (S.cats.length) L.push('');
+  S.cats.forEach((c, i) => {
+    const n = 'Catalyst ' + (i + 1);
+    const rle = rleOf(c.rle, n);
+    if (!rle) { err(n + ': RLE is empty'); return; }
+    const ints = [['max-active', c.maxActive], ['dx', c.dx], ['dy', c.dy]];
+    for (const [nm, v] of ints) if (!isInt(v) || (nm === 'max-active' && +v < 0)) { err(n + ': ' + nm + ' must be a whole number'); return; }
+    let line = 'cat ' + rle + ' ' + c.maxActive.trim() + ' ' + c.dx.trim() + ' ' + c.dy.trim() + ' ' + c.sym;
+    const xy = (nm, o) => {
+      const r2 = rleOf(o.rle, n + ' ' + nm);
+      if (!r2) return '';
+      if (!isInt(o.x) || !isInt(o.y)) { err(n + ' ' + nm + ': x/y must be whole numbers'); return ''; }
+      return ' ' + nm + ' ' + r2 + ' ' + o.x.trim() + ' ' + o.y.trim();
+    };
+    for (const f of c.forbidden) line += xy('forbidden', f);
+    line += xy('required', c.req) + xy('antirequired', c.anti) + xy('locus', c.locus);
+    if (c.transparent) line += ' transparent';
+    if (c.mustinclude) line += ' mustinclude';
+    if (c.checkRecovery) line += ' check-recovery';
+    if (c.sacrificial) line += ' sacrificial';
+    if (c.isBlinker) line += ' isblinker';
+    if (c.period.trim()) {
+      if (!isInt(c.period) || +c.period < 1) err(n + ': period must be a positive whole number');
+      else line += ' period ' + c.period.trim();
+    }
+    L.push(line);
+  });
+  return {text: L.join('\n') + '\n', issues};
+}
+
+// Parses an existing .in file (or just cat lines) into state fields.
+function parseIn(text, S) {
+  const known = new Set();
+  const ignored = [];
+  const cats = [], filters = [], baits = [], areas = [], includes = [];
+  const set = (k, v) => { S[k] = v; };
+  for (const line of text.split(/\r?\n/)) {
+    const t = line.trim().split(/\s+/);
+    if (t.length < 2) continue;
+    const kw = t[0];
+    switch (kw) {
+      case 'rule': set('rule', t.slice(1).join('')); break;
+      case 'max-gen': set('maxGen', t[1]); break;
+      case 'start-gen': set('startGen', t[1]); break;
+      case 'last-gen': set('lastGen', t[1]); break;
+      case 'num-catalyst': set('numCat', t[1]); break;
+      case 'num-transparent': set('numTransparent', t[1]); break;
+      case 'stable-interval': set('stable', t[1]); break;
+      case 'stop-after-cats-destroyed': set('stopAfter', t[1]); break;
+      case 'max-category-size': set('maxCatSize', t[1]); break;
+      case 'output-gap': set('outputGap', t[1]); break;
+      case 'threads': set('threads', t[1]); break;
+      case 'max-results': set('maxResults', t[1]); break;
+      case 'max-time': set('maxTime', t[1]); break;
+      case 'output-list': set('outputList', t.slice(1).join(' ')); break;
+      case 'include': includes.push(t.slice(1).join(' ')); break;
+      case 'keep-duplicates': S.keepDup = !/^(no|false|0|off)$/.test(t[1]); break;
+      case 'max-junk': set('maxJunk', t[1]); break;
+      case 'search-area': case 'exclude-area':
+        if (t.length >= 5) areas.push({mode: kw === 'exclude-area' ? 'exclude' : 'include', x: t[1], y: t[2], w: t[3], h: t[4]});
+        break;
+      case 'symmetry': set('sym', t[1]); break;
+      case 'pat': set('patRaw', t[1]); if (t.length > 3) { set('patDx', t[2]); set('patDy', t[3]); } break;
+      case 'output': set('output', t.slice(1).join(' ')); break;
+      case 'full-report': set('fullReport', t.slice(1).join(' ')); break;
+      case 'fit-in-width-height': set('fitW', t[1]); set('fitH', t[2] || ''); break;
+      case 'also-required': set('alsoRle', t[1]); set('alsoX', t[2] || '0'); set('alsoY', t[3] || '0'); break;
+      case 'filter': case 'andfilter': case 'orfilter':
+        filters.push({type: kw === 'filter' ? 'andfilter' : kw, gen: t[1], rle: t[2] || '', dx: t[3] || '0', dy: t[4] || '0'}); break;
+      case 'match': filters.push({type: 'match', gen: t[1], rle: t[2] || '', dx: '0', dy: '0'}); break;
+      case 'bait': {
+        if (t.length < 4) { ignored.push(line.trim().slice(0, 60)); break; }
+        const b = newBait();
+        b.rle = t[1]; b.x = t[2]; b.y = t[3];
+        for (let k = 4; k < t.length; k++) {
+          if (t[k] === 'survive') b.survive = t[++k] || '';
+          else if (t[k] === 'absent') b.absent = t[++k] || '';
+          else ignored.push('unknown bait attribute "' + t[k] + '"');
+        }
+        baits.push(b);
+        break;
+      }
+      case 'cat': {
+        if (t.length < 6) { ignored.push(line); break; }
+        const c = newCat();
+        c.rle = t[1]; c.maxActive = t[2]; c.dx = t[3]; c.dy = t[4]; c.sym = t[5][0];
+        let i = 6, ok = true;
+        while (i < t.length) {
+          const w = t[i];
+          if (w === 'forbidden') { c.forbidden.push({rle: t[i+1] || '', x: t[i+2] || '0', y: t[i+3] || '0'}); i += 4; }
+          else if (w === 'required' || w === 'antirequired' || w === 'locus') {
+            const o = w === 'required' ? c.req : w === 'antirequired' ? c.anti : c.locus;
+            o.rle = t[i+1] || ''; o.x = t[i+2] || '0'; o.y = t[i+3] || '0'; i += 4;
+          }
+          else if (w === 'transparent') { c.transparent = true; i++; }
+          else if (w === 'mustinclude') { c.mustinclude = true; i++; }
+          else if (w === 'check-recovery') { c.checkRecovery = true; i++; }
+          else if (w === 'sacrificial') { c.sacrificial = true; i++; }
+          else if (w === 'isblinker') { c.isBlinker = true; i++; }
+          else if (w === 'period') { c.period = t[i+1] || ''; i += 2; }
+          else { ok = false; ignored.push('unknown catalyst attribute "' + w + '"'); i++; }
+        }
+        cats.push(c);
+        break;
+      }
+      default:
+        if (!/^[=#]/.test(kw)) ignored.push(line.trim().slice(0, 60));
+    }
+  }
+  return {cats, filters, baits, areas, includes, ignored};
+}
+const HENSEL = [["0","c",[0]],["1","c",[1,4,32,128]],["1","e",[2,8,16,64]],["2","c",[5,33,132,160]],["2","e",[10,18,72,80]],["2","k",[12,17,34,48,65,68,130,136]],["2","a",[3,6,9,20,40,96,144,192]],["2","i",[24,66]],["2","n",[36,129]],["3","c",[37,133,161,164]],["3","e",[26,74,82,88]],["3","k",[50,76,81,138]],["3","a",[11,22,104,208]],["3","i",[7,41,148,224]],["3","n",[13,21,35,97,134,168,176,196]],["3","y",[49,69,140,162]],["3","q",[38,44,52,100,131,137,145,193]],["3","j",[14,19,42,73,84,112,146,200]],["3","r",[25,28,56,67,70,98,152,194]],["4","c",[165]],["4","e",[90]],["4","k",[51,77,85,113,142,170,178,204]],["4","a",[15,23,43,105,150,212,232,240]],["4","i",[29,99,184,198]],["4","n",[39,45,135,149,169,180,225,228]],["4","y",[53,101,141,163,166,172,177,197]],["4","q",[54,108,139,209]],["4","j",[58,78,83,89,92,114,154,202]],["4","r",[27,30,75,86,106,120,210,216]],["4","t",[57,71,156,226]],["4","w",[46,116,147,201]],["4","z",[60,102,153,195]],["5","c",[91,94,122,218]],["5","e",[167,173,181,229]],["5","k",[117,174,179,205]],["5","a",[47,151,233,244]],["5","i",[31,107,214,248]],["5","n",[59,79,87,121,158,220,234,242]],["5","y",[93,115,186,206]],["5","q",[62,110,118,124,155,203,211,217]],["5","j",[55,109,143,171,182,213,236,241]],["5","r",[61,103,157,185,188,199,227,230]],["6","c",[95,123,222,250]],["6","e",[175,183,237,245]],["6","k",[119,125,187,190,207,221,238,243]],["6","a",[63,111,159,215,235,246,249,252]],["6","i",[189,231]],["6","n",[126,219]],["7","c",[127,223,251,254]],["7","e",[191,239,247,253]],["8","c",[255]]];
+
+/* ---------- auto-split support: rule tables, sparse stepping, classification ---------- */
+// Neighbour bit for a neighbour at offset (dx,dy): NW=0x80 N=0x40 NE=0x20 W=0x10 E=0x08 SW=0x04 S=0x02 SE=0x01
+const NBIT = {'-1,-1': 0x80, '0,-1': 0x40, '1,-1': 0x20, '-1,0': 0x10, '1,0': 0x08, '-1,1': 0x04, '0,1': 0x02, '1,1': 0x01};
+const NOFFS = Object.keys(NBIT).map(k => k.split(',').map(Number));
+
+// Returns {ok, error, birth, survive}; same syntax as the C++ program (Hensel/INT, S/B numbers, Golly MAP).
+function ruleTables(str) {
+  let r = String(str || '').replace(/\s+/g, '');
+  if (!r) r = 'B3/S23';
+  const birth = new Uint8Array(256), survive = new Uint8Array(256);
+  if (/^map/i.test(r) && r.length > 3) {
+    const b64 = r.slice(3).replace(/=+$/, '');
+    const val = c => c >= 'A' && c <= 'Z' ? c.charCodeAt(0) - 65 : c >= 'a' && c <= 'z' ? c.charCodeAt(0) - 71 : c >= '0' && c <= '9' ? c.charCodeAt(0) + 4 : c === '+' ? 62 : c === '/' ? 63 : -1;
+    const bits = [];
+    for (const c of b64) {
+      const v = val(c);
+      if (v < 0) return {ok: false, error: 'invalid base64 character in MAP rule'};
+      for (let k = 5; k >= 0; k--) bits.push((v >> k) & 1);
+    }
+    if (bits.length < 512) return {ok: false, error: 'MAP rule is too short'};
+    for (let k = 0; k < 512; k++) {
+      if (!bits[k]) continue;
+      const mask = ((k & 0x1e0) >> 1) | (k & 0x0f);
+      if (k & 0x10) survive[mask] = 1; else birth[mask] = 1;
+    }
+  } else {
+    if (!/[BbSs]/.test(r)) {
+      const sl = r.indexOf('/');
+      if (sl < 0) return {ok: false, error: 'expected something like B3/S23'};
+      r = 'S' + r.slice(0, sl) + '/B' + r.slice(sl + 1);
+    }
+    let mode = -1, i = 0, seenB = false, seenS = false;
+    while (i < r.length) {
+      const ch = r[i];
+      if (ch === '/') { i++; continue; }
+      if (ch === 'B' || ch === 'b') { mode = 0; seenB = true; i++; continue; }
+      if (ch === 'S' || ch === 's') { mode = 1; seenS = true; i++; continue; }
+      if (mode < 0 || ch < '0' || ch > '8') return {ok: false, error: "unexpected character '" + ch + "'"};
+      i++;
+      let neg = false;
+      if (r[i] === '-') { neg = true; i++; }
+      let letters = '';
+      while (i < r.length && /[A-Za-z]/.test(r[i]) && !/[BbSs]/.test(r[i])) { letters += r[i].toLowerCase(); i++; }
+      for (const l of letters) if (LETTERS[ch].indexOf(l) < 0) return {ok: false, error: "letter '" + l + "' is not valid for neighbour count " + ch};
+      if (neg && !letters) return {ok: false, error: "'-' after " + ch + ' must be followed by letters'};
+      const dest = mode === 0 ? birth : survive;
+      for (const [n, l, masks] of HENSEL) {
+        if (n !== ch) continue;
+        const listed = letters.indexOf(l) >= 0;
+        const on = !letters ? true : (neg ? !listed : listed);
+        if (on) for (const m of masks) dest[m] = 1;
+      }
+    }
+    if (!seenB && !seenS) return {ok: false, error: 'rule must contain B and/or S'};
+  }
+  if (birth[0]) return {ok: false, error: 'rules with B0 are not supported'};
+  return {ok: true, birth, survive};
+}
+
+// One generation of a sparse set of cells {"x,y"} (unbounded plane)
+function stepCells(cells, R) {
+  const masks = new Map();
+  for (const key of cells) {
+    const [x, y] = key.split(',').map(Number);
+    if (!masks.has(key)) masks.set(key, 0);
+    for (const [dx, dy] of NOFFS) {
+      const k2 = (x + dx) + ',' + (y + dy);
+      masks.set(k2, (masks.get(k2) || 0) | NBIT[(-dx) + ',' + (-dy)]);
+    }
+  }
+  const out = new Set();
+  for (const [key, m] of masks) {
+    if (cells.has(key) ? R.survive[m] : (m && R.birth[m])) out.add(key);
+  }
+  return out;
+}
+
+function shapeKey(cells) {
+  let mx = Infinity, my = Infinity;
+  const pts = [];
+  for (const k of cells) { const [x, y] = k.split(',').map(Number); pts.push([x, y]); if (x < mx) mx = x; if (y < my) my = y; }
+  pts.sort((a, b) => a[1] - b[1] || a[0] - b[0]);
+  return {key: pts.map(p => (p[0] - mx) + ',' + (p[1] - my)).join(';'), mx, my};
+}
+
+// Simulates one object alone: still life, oscillator, spaceship, or something else
+function classifyObject(cells, R, maxGen) {
+  maxGen = maxGen || 64;
+  const first = shapeKey(cells);
+  let cur = cells;
+  for (let g = 1; g <= maxGen; g++) {
+    cur = stepCells(cur, R);
+    if (cur.size === 0) return {type: 'dies', gens: g, label: 'dies out'};
+    if (cur.size > 400) return {type: 'unstable', label: 'grows (not stable)'};
+    const s = shapeKey(cur);
+    if (s.key === first.key) {
+      const dx = s.mx - first.mx, dy = s.my - first.my;
+      if (dx === 0 && dy === 0) return g === 1 ? {type: 'still', period: 1, label: 'still life'} : {type: 'osc', period: g, label: 'oscillator, period ' + g};
+      return {type: 'ship', period: g, dx, dy, label: 'spaceship, period ' + g + ' moving (' + dx + ',' + dy + ')'};
+    }
+  }
+  return {type: 'other', label: 'no repeat within ' + maxGen + ' generations'};
+}
+
+// 8-connected components of an array of [x,y] cells
+function splitComponents(cellList) {
+  const set = new Set(cellList.map(c => c[0] + ',' + c[1]));
+  const seen = new Set(), comps = [];
+  for (const key of set) {
+    if (seen.has(key)) continue;
+    const stack = [key], comp = [];
+    while (stack.length) {
+      const k = stack.pop();
+      if (seen.has(k)) continue;
+      seen.add(k);
+      const [x, y] = k.split(',').map(Number);
+      comp.push([x, y]);
+      for (let dx = -1; dx <= 1; dx++) for (let dy = -1; dy <= 1; dy++) {
+        const k2 = (x + dx) + ',' + (y + dy);
+        if ((dx || dy) && set.has(k2) && !seen.has(k2)) stack.push(k2);
+      }
+    }
+    comps.push(comp);
+  }
+  // stable order: top-most, then left-most
+  comps.sort((a, b) => Math.min(...a.map(c => c[1])) - Math.min(...b.map(c => c[1])) || Math.min(...a.map(c => c[0])) - Math.min(...b.map(c => c[0])));
+  return comps;
+}
+
+function bbox(cells) {
+  let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity;
+  for (const [x, y] of cells) { x0 = Math.min(x0, x); y0 = Math.min(y0, y); x1 = Math.max(x1, x); y1 = Math.max(y1, y); }
+  return {x0, y0, x1, y1, w: x1 - x0 + 1, h: y1 - y0 + 1};
+}
+
+// Groups objects whose bounding boxes are at most `gap` empty cells apart. Returns arrays of indices.
+function clusterObjects(boxes, gap) {
+  const n = boxes.length, parent = boxes.map((_, i) => i);
+  const find = i => parent[i] === i ? i : (parent[i] = find(parent[i]));
+  for (let i = 0; i < n; i++) for (let j = i + 1; j < n; j++) {
+    const a = boxes[i], b = boxes[j];
+    const gx = Math.max(0, Math.max(a.x0, b.x0) - Math.min(a.x1, b.x1) - 1);
+    const gy = Math.max(0, Math.max(a.y0, b.y0) - Math.min(a.y1, b.y1) - 1);
+    if (Math.max(gx, gy) <= gap) parent[find(i)] = find(j);
+  }
+  const groups = new Map();
+  for (let i = 0; i < n; i++) { const r = find(i); if (!groups.has(r)) groups.set(r, []); groups.get(r).push(i); }
+  return [...groups.values()].sort((a, b) => Math.min(...a.map(i => boxes[i].y0)) - Math.min(...b.map(i => boxes[i].y0)) || Math.min(...a.map(i => boxes[i].x0)) - Math.min(...b.map(i => boxes[i].x0)));
+}
+
+function encodeRle(cells) {
+  if (!cells.length) return '!';
+  const b = bbox(cells), set = new Set(cells.map(c => c[0] + ',' + c[1]));
+  const rows = [];
+  for (let y = b.y0; y <= b.y1; y++) {
+    let row = '', x = b.x0;
+    while (x <= b.x1) {
+      const v = set.has(x + ',' + y); let n = 0;
+      while (x <= b.x1 && set.has(x + ',' + y) === v) { n++; x++; }
+      if (v || x <= b.x1) row += (n > 1 ? n : '') + (v ? 'o' : 'b');   // trailing dead cells are implied
+    }
+    rows.push(row);
+  }
+  return rows.join('$').replace(/\$+/g, m => m.length > 1 ? m.length + '$' : '$') + '!';
+}
+
+// objects: [{cells, role:'pattern'|'bait'|'skip'}]. Returns setups centred on the origin.
+function makeSetups(objects, gap, merge) {
+  const used = objects.map((o, i) => ({o, i})).filter(e => e.o.role !== 'skip');
+  if (!used.length) return [];
+  const groups = merge ? [used.map((_, k) => k)] : clusterObjects(used.map(e => bbox(e.o.cells)), gap);
+  return groups.map(g => {
+    const members = g.map(k => used[k].o);
+    const all = [].concat(...members.map(m => m.cells)), b = bbox(all);
+    const ox = -(b.w >> 1) - b.x0, oy = -(b.h >> 1) - b.y0;     // centre the group's box on the origin
+    const patCells = [].concat(...members.filter(m => m.role === 'pattern').map(m => m.cells));
+    const setup = {pat: null, baits: [], w: b.w, h: b.h, n: members.length};
+    if (patCells.length) { const pb = bbox(patCells); setup.pat = {rle: encodeRle(patCells.map(c => [c[0] - pb.x0, c[1] - pb.y0])), x: pb.x0 + ox, y: pb.y0 + oy}; }
+    for (const m of members.filter(m => m.role === 'bait')) {
+      const mb = bbox(m.cells);
+      setup.baits.push({rle: encodeRle(m.cells.map(c => [c[0] - mb.x0, c[1] - mb.y0])), x: mb.x0 + ox, y: mb.y0 + oy});
+    }
+    return setup;
+  });
+}
+
+/*CORE_END*/
+
+/* ---------------- UI ---------------- */
+const $ = (s, r = document) => r.querySelector(s);
+let S = defaultState();
+const EXAMPLE = `rule B3/S23
+max-gen 100
+num-catalyst 2
+stable-interval 15
+symmetry C2|even
+pat 2bo$b3o$o3bo$b3o$2bo! 1 1
+output p84.rle
+cat 2o$2o 100 0 0 .
+cat bo$obo$bo 100 -1 -1 .
+cat 2o$obo$b2o 100 -1 -1 |
+`;
+
+function listOf(box) { return box.classList.contains('cat') ? S.cats : box.classList.contains('bait') ? S.baits : S.filters; }
+function getPath(o, p) { return p.split('.').reduce((a, k) => a == null ? a : a[k], o); }
+function setPath(o, p, v) { const ks = p.split('.'); const last = ks.pop(); ks.reduce((a, k) => a[k], o)[last] = v; }
+const esc = s => String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/"/g, '&quot;');
+
+function initStatic() {
+  $('#settings').innerHTML = SETTINGS.map(([k, kw, ph, help]) =>
+    `<label class="f"><span><code>${kw}</code></span><input type="text" data-bind="${k}" inputmode="numeric" placeholder="${ph}"><small>${help}</small></label>`
+  ).join('');
+  $('#sym').innerHTML = SYMS.map(([v, l]) => `<option value="${esc(v)}">${esc(l)}</option>`).join('');
+}
+
+function syncStatic() {
+  $('#keepDup').checked = !!S.keepDup;
+  $('#includes').value = S.includes.join('\n');
+  document.querySelectorAll('[data-bind]').forEach(el => {
+    const v = getPath(S, el.dataset.bind);
+    if (el.tagName === 'SELECT' && ![...el.options].some(o => o.value === v)) {
+      el.add(new Option(v + ' (custom)', v));
+    }
+    if (v !== undefined) el.value = v;
+  });
+}
+
+function ruleRow(label, key, c, i, help) {
+  const o = c[key];
+  return `<div class="sub3"><code>${label}</code> <small>${help}</small></div>
+  <div class="row"><textarea class="wide" rows="2" data-f="${key}.rle" data-rle="1" spellcheck="false" placeholder="RLE (optional)">${esc(o.rle)}</textarea>
+  <label class="f">x<input type="text" data-f="${key}.x" value="${esc(o.x)}"></label>
+  <label class="f">y<input type="text" data-f="${key}.y" value="${esc(o.y)}"></label></div>`;
+}
+
+function renderCats() {
+  $('#cats').innerHTML = S.cats.map((c, i) => `
+  <div class="item cat" data-i="${i}">
+    <div class="head"><span>Catalyst ${i + 1}</span>
+      <span class="btns"><button class="small" data-act="dupCat">Duplicate</button><button class="small danger" data-act="delCat">Remove</button></span></div>
+    <div class="catgrid">
+      <div>
+        <label class="f">RLE
+          <textarea rows="2" data-f="rle" data-rle="1" spellcheck="false" placeholder="e.g. 2o$2o!">${esc(c.rle)}</textarea>
+          <small data-info="rle"></small>
+        </label>
+        <div class="row" style="margin-top:8px">
+          <label class="f">max-active<input type="text" data-f="maxActive" value="${esc(c.maxActive)}" inputmode="numeric"><small>Gens in a row it may be missing</small></label>
+          <label class="f">dx<input type="text" data-f="dx" value="${esc(c.dx)}" inputmode="numeric"></label>
+          <label class="f">dy<input type="text" data-f="dy" value="${esc(c.dy)}" inputmode="numeric"></label>
+          <label class="f wide">Symmetry
+            <select data-f="sym">${CAT_SYMS.map(([v, l]) => `<option value="${esc(v)}"${v === c.sym ? ' selected' : ''}>${esc(l)}</option>`).join('')}</select></label>
+        </div>
+      </div>
+      <div><canvas class="thumb" width="300" height="220"></canvas><div class="thumbcap">Cross = origin (symmetry centre)</div></div>
+    </div>
+    <details class="adv"><summary>Advanced options</summary>
+      <div class="flags">
+        <label><input type="checkbox" data-f="transparent"${c.transparent ? ' checked' : ''}>transparent</label>
+        <label><input type="checkbox" data-f="mustinclude"${c.mustinclude ? ' checked' : ''}>mustinclude</label>
+        <label><input type="checkbox" data-f="checkRecovery"${c.checkRecovery ? ' checked' : ''}>check-recovery</label>
+        <label><input type="checkbox" data-f="sacrificial"${c.sacrificial ? ' checked' : ''}>sacrificial</label>
+        <label><input type="checkbox" data-f="isBlinker"${c.isBlinker ? ' checked' : ''}>isblinker</label>
+        <label>period <input type="text" data-f="period" value="${esc(c.period)}" style="width:60px" placeholder="1"></label>
+      </div>
+      <div class="flags"><small><b>transparent</b>: counts toward num-transparent · <b>mustinclude</b>: solutions need ≥1 such catalyst · <b>check-recovery</b>: test it recovers in exactly max-active gens alone · <b>sacrificial</b>: need not recover · <b>isblinker</b>: counts as recovered in any phase (blinker, toad, … ; period auto-detected if empty) · <b>period n</b>: periodic catalyst</small></div>
+      <div class="sub3"><code>forbidden</code> <small>drop the solution if this pattern appears at the catalyst's location (use several to exclude eaters etc.)</small></div>
+      ${c.forbidden.map((f, j) => `<div class="row" data-j="${j}"><textarea class="wide" rows="2" data-f="forbidden.${j}.rle" data-rle="1" spellcheck="false">${esc(f.rle)}</textarea>
+        <label class="f">x<input type="text" data-f="forbidden.${j}.x" value="${esc(f.x)}"></label>
+        <label class="f">y<input type="text" data-f="forbidden.${j}.y" value="${esc(f.y)}"></label>
+        <button class="small danger" data-act="delForbid" data-j="${j}">✕</button></div>`).join('')}
+      <div class="actions"><button class="small" data-act="addForbid">+ forbidden</button></div>
+      ${ruleRow('required', 'req', c, i, 'cells that must stay ON in every generation')}
+      ${ruleRow('antirequired', 'anti', c, i, 'cells that must stay OFF in every generation')}
+      ${ruleRow('locus', 'locus', c, i, 'cells that must interact first')}
+    </details>
+  </div>`).join('') || '<div class="msg warn">No catalysts yet.</div>';
+  drawThumbs();
+}
+
+function renderAreas() {
+  $('#areas').innerHTML = S.areas.map((r, i) => `
+  <div class="row" data-i="${i}" style="flex-wrap:nowrap;align-items:center;margin-top:6px">
+    <select data-a="mode" style="flex:0 0 96px"><option value="include"${r.mode !== 'exclude' ? ' selected' : ''}>include</option><option value="exclude"${r.mode === 'exclude' ? ' selected' : ''}>exclude</option></select>
+    <input type="text" data-a="x" value="${esc(r.x)}" inputmode="numeric" placeholder="x">
+    <input type="text" data-a="y" value="${esc(r.y)}" inputmode="numeric" placeholder="y">
+    <input type="text" data-a="w" value="${esc(r.w)}" inputmode="numeric" placeholder="w">
+    <input type="text" data-a="h" value="${esc(r.h)}" inputmode="numeric" placeholder="h">
+    <button class="small danger" data-act="delArea" style="flex:0 0 auto">✕</button>
+  </div>`).join('') || '<div class="msg" style="color:var(--muted)">Default area (-30 -30 60 60).</div>';
+}
+
+function renderBaits() {
+  $('#baits').innerHTML = S.baits.map((b, i) => `
+  <div class="item bait" data-i="${i}">
+    <div class="head"><span>Bait ${i + 1}</span><span class="btns"><button class="small danger" data-act="delBait">Remove</button></span></div>
+    <div class="row">
+      <label class="f wide">RLE <code>bait</code>
+        <textarea rows="2" data-f="rle" data-rle="1" spellcheck="false" placeholder="e.g. 2o$2o!">${esc(b.rle)}</textarea></label>
+      <label class="f">x<input type="text" data-f="x" value="${esc(b.x)}" inputmode="numeric"></label>
+      <label class="f">y<input type="text" data-f="y" value="${esc(b.y)}" inputmode="numeric"></label>
+    </div>
+    <div class="row" style="margin-top:8px">
+      <label class="f"><span><code>survive</code></span><input type="text" data-f="survive" value="${esc(b.survive)}" inputmode="numeric" placeholder="stable-interval"><small>Generations it must be back and intact</small></label>
+      <label class="f"><span><code>absent</code></span><input type="text" data-f="absent" value="${esc(b.absent)}" inputmode="numeric" placeholder="1"><small>Min generations it must be missing first (0 = may stay untouched)</small></label>
+    </div>
+  </div>`).join('') || '<div class="msg" style="color:var(--muted)">No bait.</div>';
+}
+
+function renderFilters() {
+  $('#filters').innerHTML = S.filters.map((f, i) => `
+  <div class="item flt" data-i="${i}">
+    <div class="head"><span>Filter ${i + 1}</span><span class="btns"><button class="small danger" data-act="delFilter">Remove</button></span></div>
+    <div class="row">
+      <label class="f">Type<select data-f="type">
+        <option value="andfilter"${f.type === 'andfilter' ? ' selected' : ''}>andfilter (must match)</option>
+        <option value="orfilter"${f.type === 'orfilter' ? ' selected' : ''}>orfilter (one must match)</option>
+        <option value="match"${f.type === 'match' ? ' selected' : ''}>match (anywhere)</option></select></label>
+      <label class="f">Generation / range<input type="text" data-f="gen" value="${esc(f.gen)}" placeholder="1-100"><small>e.g. 50 or 1-100</small></label>
+      ${f.type === 'match' ? '' : `<label class="f">dx<input type="text" data-f="dx" value="${esc(f.dx)}"></label><label class="f">dy<input type="text" data-f="dy" value="${esc(f.dy)}"></label>`}
+    </div>
+    <label class="f" style="margin-top:6px">Pattern RLE<textarea rows="2" data-f="rle" data-rle="1" spellcheck="false">${esc(f.rle)}</textarea></label>
+  </div>`).join('') || '<div class="msg" style="color:var(--muted)">No filters: every solution is kept.</div>';
+}
+
+function cssVar(n) { return getComputedStyle(document.documentElement).getPropertyValue(n).trim(); }
+
+function drawMap() {
+  const cv = $('#map'), ctx = cv.getContext('2d'), s = cv.width / 64;
+  ctx.clearRect(0, 0, cv.width, cv.height);
+  ctx.strokeStyle = cssVar('--grid'); ctx.lineWidth = 1;
+  for (let i = 0; i <= 64; i += 8) { ctx.beginPath(); ctx.moveTo(i * s, 0); ctx.lineTo(i * s, cv.height); ctx.moveTo(0, i * s); ctx.lineTo(cv.width, i * s); ctx.stroke(); }
+  const rects = S.areas.map(r => ({mode: r.mode, v: [r.x, r.y, r.w, r.h].map(t => parseInt(t, 10))}))
+    .filter(r => r.v.every(Number.isFinite) && r.v[2] > 0 && r.v[3] > 0);
+  const inc = rects.filter(r => r.mode !== 'exclude'), exc = rects.filter(r => r.mode === 'exclude');
+  const allowed = (cx, cy) => (S.areas.every(r => ![r.x, r.y, r.w, r.h].every(t => String(t).trim() !== '') || r.mode === 'exclude')
+      ? (cx >= -30 && cx < 30 && cy >= -30 && cy < 30)
+      : inc.some(r => cx >= r.v[0] && cx < r.v[0] + r.v[2] && cy >= r.v[1] && cy < r.v[1] + r.v[3]))
+    && !exc.some(r => cx >= r.v[0] && cx < r.v[0] + r.v[2] && cy >= r.v[1] && cy < r.v[1] + r.v[3]);
+  ctx.fillStyle = cssVar('--area');
+  for (let cx = -32; cx < 32; cx++) for (let cy = -32; cy < 32; cy++) if (allowed(cx, cy)) ctx.fillRect((cx + 32) * s, (cy + 32) * s, s, s);
+  ctx.strokeStyle = cssVar('--axis'); ctx.lineWidth = 1;
+  ctx.beginPath(); ctx.moveTo(32 * s, 0); ctx.lineTo(32 * s, cv.height); ctx.moveTo(0, 32 * s); ctx.lineTo(cv.width, 32 * s); ctx.stroke();
+  const p = decodeRle(cleanRle(S.patRaw).rle), dx = parseInt(S.patDx, 10) || 0, dy = parseInt(S.patDy, 10) || 0;
+  ctx.fillStyle = cssVar('--areaLine');
+  for (const b of S.baits) {
+    const bd = decodeRle(cleanRle(b.rle).rle), bx = parseInt(b.x, 10) || 0, by = parseInt(b.y, 10) || 0;
+    for (const [x, y] of bd.cells) ctx.fillRect((x + bx + 32) * s, (y + by + 32) * s, s - .5, s - .5);
+  }
+  ctx.fillStyle = cssVar('--cell');
+  for (const [x, y] of p.cells) ctx.fillRect((x + dx + 32) * s, (y + dy + 32) * s, s - .5, s - .5);
+}
+
+function drawThumbs() {
+  document.querySelectorAll('.cat').forEach(el => {
+    const c = S.cats[+el.dataset.i]; if (!c) return;
+    const cv = $('canvas.thumb', el), ctx = cv.getContext('2d');
+    const d = decodeRle(cleanRle(c.rle).rle), dx = parseInt(c.dx, 10) || 0, dy = parseInt(c.dy, 10) || 0;
+    const minX = Math.min(0, dx) - 1, minY = Math.min(0, dy) - 1;
+    const maxX = Math.max(1, dx + d.w) + 1, maxY = Math.max(1, dy + d.h) + 1;
+    const sc = Math.max(2, Math.min(24, Math.floor(Math.min(cv.width / (maxX - minX), cv.height / (maxY - minY)))));
+    const ox = Math.floor((cv.width - (maxX - minX) * sc) / 2) - minX * sc, oy = Math.floor((cv.height - (maxY - minY) * sc) / 2) - minY * sc;
+    ctx.clearRect(0, 0, cv.width, cv.height);
+    ctx.fillStyle = cssVar('--cell');
+    for (const [x, y] of d.cells) ctx.fillRect(ox + (x + dx) * sc, oy + (y + dy) * sc, sc - 1, sc - 1);
+    ctx.strokeStyle = cssVar('--areaLine'); ctx.lineWidth = 2;
+    ctx.strokeRect(ox + 0.5, oy + 0.5, sc - 1, sc - 1);
+    ctx.beginPath(); ctx.moveTo(ox - sc, oy + sc / 2); ctx.lineTo(ox + 2 * sc, oy + sc / 2); ctx.moveTo(ox + sc / 2, oy - sc); ctx.lineTo(ox + sc / 2, oy + 2 * sc); ctx.stroke();
+    const info = $('[data-info="rle"]', el), cl = cleanRle(c.rle);
+    info.textContent = cl.error ? '⚠ ' + cl.error : d.cells.length ? d.w + '×' + d.h + ' box, ' + d.cells.length + ' cells' : '';
+  });
+}
+
+function update() {
+  const r = build(S);
+  $('#out').value = r.text;
+  const ul = r.issues.map(i => `<li class="${i.t}">${i.t === 'err' ? '✖' : '⚠'} ${esc(i.m)}</li>`).join('');
+  $('#issues').innerHTML = r.issues.length ? `<ul>${ul}</ul>` : '<div class="msg ok">✔ No problems found.</div>';
+  const rc = checkRule(S.rule);
+  $('#ruleMsg').className = 'msg ' + (rc.ok ? 'ok' : 'err');
+  $('#ruleMsg').textContent = rc.ok ? '✔ ' + rc.note : '✖ ' + rc.error;
+  const pc = cleanRle(S.patRaw), pd = decodeRle(pc.rle);
+  $('#patInfo').textContent = pc.error ? '⚠ ' + pc.error : pd.cells.length ? pd.w + '×' + pd.h + ' box, ' + pd.cells.length + ' cells' : '';
+  drawMap(); drawThumbs();
+}
+
+function detectRule(raw) {
+  const c = cleanRle(raw), box = $('#ruleDetect');
+  if (c.rule && c.rule.replace(/\s/g, '').toLowerCase() !== S.rule.replace(/\s/g, '').toLowerCase()) {
+    box.innerHTML = `Pasted RLE says rule <code>${esc(c.rule)}</code>. <button class="small" id="useDetected">Use this rule</button>`;
+    $('#useDetected').onclick = () => { S.rule = c.rule; $('#rule').value = S.rule; box.textContent = ''; update(); };
+  }
+}
+
+document.addEventListener('input', e => {
+  const el = e.target;
+  if (el.id === 'keepDup') { S.keepDup = el.checked; update(); return; }
+  if (el.id === 'includes') { S.includes = el.value.split('\n'); update(); return; }
+  if (el.dataset.a) { const row = el.closest('[data-i]'); S.areas[+row.dataset.i][el.dataset.a] = el.value; update(); return; }
+  if (el.dataset.bind) { setPath(S, el.dataset.bind, el.value); update(); return; }
+  if (el.dataset.f) {
+    const box = el.closest('.cat, .flt, .bait'); if (!box) return;
+    const list = listOf(box);
+    setPath(list[+box.dataset.i], el.dataset.f, el.type === 'checkbox' ? el.checked : el.value);
+    if (el.tagName === 'SELECT' && box.classList.contains('flt')) renderFilters();
+    update();
+  }
+});
+document.addEventListener('change', e => {
+  const el = e.target;
+  if (el.dataset.rle) {                       // clean pasted RLE once editing finishes
+    const c = cleanRle(el.value);
+    if (c.rle && !c.error) { el.value = c.rle; if (el.dataset.bind) setPath(S, el.dataset.bind, c.rle); else if (el.dataset.f) { const box = el.closest('.cat, .flt, .bait'); setPath(listOf(box)[+box.dataset.i], el.dataset.f, c.rle); } }
+    if (c.rule) detectRule(el.value + '\nx = 0, rule = ' + c.rule);
+    update();
+  }
+});
+// Detect rule on paste (before cleaning strips the header)
+document.addEventListener('paste', e => {
+  const el = e.target;
+  if (el.dataset && el.dataset.rle) {
+    const txt = (e.clipboardData || window.clipboardData).getData('text');
+    const c = cleanRle(txt);
+    if (c.rule) setTimeout(() => detectRule(txt), 0);
+  }
+});
+document.addEventListener('click', e => {
+  const b = e.target.closest('button'); if (!b) return;
+  if (b.dataset.quad) { const q = b.dataset.quad.split(' '); S.areas.push({mode: 'exclude', x: q[0], y: q[1], w: q[2], h: q[3]}); renderAreas(); update(); return; }
+  if (b.dataset.act === 'delArea') { S.areas.splice(+b.closest('[data-i]').dataset.i, 1); renderAreas(); update(); return; }
+  if (b.dataset.rule) { S.rule = b.dataset.rule; $('#rule').value = S.rule; $('#ruleDetect').textContent = ''; update(); return; }
+  const act = b.dataset.act; if (!act) return;
+  const box = b.closest('.cat, .flt, .bait'); const i = box ? +box.dataset.i : -1;
+  if (act === 'delCat') { S.cats.splice(i, 1); renderCats(); }
+  else if (act === 'dupCat') { S.cats.splice(i + 1, 0, JSON.parse(JSON.stringify(S.cats[i]))); renderCats(); }
+  else if (act === 'addForbid') { S.cats[i].forbidden.push({rle: '', x: '0', y: '0'}); renderCats(); box.querySelector('details').open = true; }
+  else if (act === 'delForbid') { S.cats[i].forbidden.splice(+b.dataset.j, 1); renderCats(); S.cats.length && (document.querySelectorAll('.cat')[i].querySelector('details').open = true); }
+  else if (act === 'delBait') { S.baits.splice(i, 1); renderBaits(); }
+  else if (act === 'delFilter') { S.filters.splice(i, 1); renderFilters(); }
+  update();
+});
+
+$('#addCat').onclick = () => { S.cats.push(newCat()); renderCats(); update(); const t = document.querySelectorAll('.cat'); const last = t[t.length - 1]; if (last) $('textarea', last).focus(); };
+$('#addArea').onclick = () => { S.areas.push(newArea('include')); renderAreas(); update(); };
+$('#addExclude').onclick = () => { S.areas.push(newArea('exclude')); renderAreas(); update(); };
+$('#addBait').onclick = () => { S.baits.push(newBait()); renderBaits(); update(); const t = document.querySelectorAll('.bait textarea'); if (t.length) t[t.length - 1].focus(); };
+$('#addFilter').onclick = () => { S.filters.push(newFilter()); renderFilters(); update(); };
+$('#btnReset').onclick = () => { if (confirm('Clear everything?')) { S = defaultState(); fullRender(); } };
+$('#btnExample').onclick = () => loadIn(EXAMPLE, true);
+
+function loadIn(text, replaceAll) {
+  const base = replaceAll ? defaultState() : S;
+  if (replaceAll) { base.maxGen = ''; base.numCat = ''; base.stable = ''; base.areas = []; base.includes = []; base.output = ''; base.patDx = '0'; base.patDy = '0'; base.rule = ''; }
+  const r = parseIn(text, base);
+  if (replaceAll) { base.cats = r.cats; base.filters = r.filters; base.baits = r.baits; if (r.areas.length) base.areas = r.areas; base.includes = r.includes; S = base; }
+  else { S.cats.push(...r.cats); S.filters.push(...r.filters); S.baits.push(...r.baits); S.areas.push(...r.areas); S.includes.push(...r.includes); }
+  fullRender();
+  return r;
+}
+$('#importAdd').onclick = () => {
+  const lines = $('#importBox').value.split(/\r?\n/).filter(l => /^\s*cat\s/.test(l)).join('\n');
+  const r = parseIn(lines, {}); S.cats.push(...r.cats); renderCats(); update();
+  $('#importMsg').className = 'msg ok'; $('#importMsg').textContent = 'Added ' + r.cats.length + ' catalyst(s).';
+};
+$('#importAll').onclick = () => {
+  const r = loadIn($('#importBox').value, true);
+  $('#importMsg').className = 'msg ' + (r.ignored.length ? 'warn' : 'ok');
+  $('#importMsg').textContent = 'Loaded ' + r.cats.length + ' catalyst(s), ' + r.filters.length + ' filter(s).' + (r.ignored.length ? ' Ignored: ' + r.ignored.slice(0, 3).join('; ') + (r.ignored.length > 3 ? '…' : '') : '');
+};
+
+$('#copy').onclick = async () => {
+  const ta = $('#out'), m = $('#copyMsg'); m.className = 'msg ok';
+  try { await navigator.clipboard.writeText(ta.value); m.textContent = 'Copied.'; return; } catch (e) {}
+  try { ta.select(); if (document.execCommand('copy')) { m.textContent = 'Copied.'; return; } } catch (e) {}
+  ta.select(); m.className = 'msg warn'; m.textContent = 'Selected: press Ctrl/Cmd+C to copy.';
+};
+
+let dl = null;
+(async () => { try { if (window.claude && claude.use) dl = await claude.use('downloads'); } catch (e) { dl = null; } if (dl) $('#save').hidden = false; })();
+$('#save').onclick = async () => {
+  const m = $('#copyMsg');
+  try {
+    const name = ($('#fname').value.trim() || 'search').replace(/\.(in|txt)$/i, '').replace(/[^\w.\-]+/g, '_');
+    await dl.save({filename: name + '.txt', data: $('#out').value});
+    m.className = 'msg ok'; m.textContent = 'Saved as ' + name + '.txt (CatForce reads any extension; rename to .in if you like).';
+  } catch (e) { if (e && e.code !== 'declined') { m.className = 'msg warn'; m.textContent = 'Could not save: use Copy instead.'; } }
+};
+
+
+/* ---------------- auto-split UI ---------------- */
+let splitState = {objs: [], setups: [], rule: null};
+
+function suffixName(name, k, total) {
+  if (!name || total < 2) return name;
+  const m = name.match(/^(.*?)(\.[A-Za-z0-9]+)?$/);
+  return m[1] + '_' + k + (m[2] || '');
+}
+function applySetupTo(S2, setup, k, total, remember) {
+  S2.patRaw = setup.pat ? setup.pat.rle : '';
+  S2.patDx = setup.pat ? String(setup.pat.x) : '0';
+  S2.patDy = setup.pat ? String(setup.pat.y) : '0';
+  S2.baits = setup.baits.map(b => Object.assign(newBait(), {rle: b.rle, x: String(b.x), y: String(b.y)}));
+  // File names get a _k suffix when there are several setups. If a field still holds a
+  // name we produced earlier, start again from its original (un-suffixed) value.
+  const last = splitState.lastApplied || {};
+  for (const f of ['output', 'outputList', 'fullReport']) {
+    let base = S2[f] || (f === 'output' ? 'results.rle' : '');
+    if (last[f] && S2[f] === last[f].made) base = last[f].base;
+    const made = suffixName(base, k, total);
+    if (S2[f] || f === 'output') S2[f] = made;
+    if (remember) { splitState.lastApplied = splitState.lastApplied || {}; splitState.lastApplied[f] = {base, made}; }
+  }
+  if (splitState.rule) S2.rule = splitState.rule;
+}
+
+function recomputeSetups() {
+  const gap = Math.max(0, parseInt($('#splitGap').value, 10) || 0);
+  splitState.setups = makeSetups(splitState.objs, gap, $('#splitMerge').checked);
+  const box = $('#splitSetups');
+  if (!splitState.objs.length) { box.innerHTML = ''; return; }
+  const N = splitState.setups.length;
+  if (!N) { box.innerHTML = '<div class="msg warn">Every object is set to "skip".</div>'; return; }
+  box.innerHTML = '<div class="sub3" style="margin-top:12px">' + N + ' setup' + (N > 1 ? 's' : '') + '</div>' + splitState.setups.map((st, i) => {
+    const warn = !st.pat ? ' <span class="msg warn">no active pattern: set at least one object to "pattern"</span>' : (!st.baits.length ? ' <span class="msg warn">no bait in this setup</span>' : '');
+    return `<div class="setupbox"><b>Setup ${i + 1}</b>: ${st.n} object${st.n > 1 ? 's' : ''}, ${st.w}x${st.h} cells.${warn}<br>
+      <code>pat ${esc(st.pat ? st.pat.rle + ' ' + st.pat.x + ' ' + st.pat.y : '(none)')}</code>
+      ${st.baits.map(b => '<br><code>bait ' + esc(b.rle) + ' ' + b.x + ' ' + b.y + '</code>').join('')}
+      <div class="actions" style="margin:6px 0 0"><button class="small" data-setup="${i}">Load into the form</button></div></div>`;
+  }).join('') + (N > 1 ? `<div class="actions"><button id="splitCopyAll">Copy all ${N} .in files</button><button id="splitSaveAll" ${dl ? '' : 'hidden'}>Save all ${N} as files</button></div><div id="splitAllMsg" class="msg"></div>` : '');
+}
+
+function renderSplitObjs() {
+  const box = $('#splitObjs');
+  box.innerHTML = splitState.objs.map((o, k) => `
+    <div class="objrow" data-k="${k}"><canvas width="144" height="144"></canvas>
+      <div class="meta"><b>Object ${k + 1}</b> &middot; ${o.cells.length} cells &middot; ${o.w}x${o.h}<br>${esc(o.info.label)}</div>
+      <select class="splitRole"><option value="pattern"${o.role === 'pattern' ? ' selected' : ''}>active pattern</option><option value="bait"${o.role === 'bait' ? ' selected' : ''}>bait</option><option value="skip"${o.role === 'skip' ? ' selected' : ''}>skip</option></select></div>`).join('');
+  box.querySelectorAll('.objrow').forEach(row => {
+    const o = splitState.objs[+row.dataset.k], cv = row.querySelector('canvas'), ctx = cv.getContext('2d');
+    const b = bbox(o.cells), sc = Math.max(2, Math.min(24, Math.floor(130 / Math.max(b.w, b.h))));
+    const ox = Math.floor((cv.width - b.w * sc) / 2), oy = Math.floor((cv.height - b.h * sc) / 2);
+    ctx.fillStyle = cssVar('--cell');
+    for (const [x, y] of o.cells) ctx.fillRect(ox + (x - b.x0) * sc, oy + (y - b.y0) * sc, sc - 1, sc - 1);
+  });
+}
+
+function analyseSplit() {
+  const msg = $('#splitMsg'); msg.className = 'msg'; msg.textContent = '';
+  const raw = $('#splitRle').value;
+  const cl = cleanRle(raw);
+  if (!cl.rle || cl.rle === '!') { msg.className = 'msg err'; msg.textContent = 'Paste an RLE first.'; return; }
+  if (cl.error) { msg.className = 'msg err'; msg.textContent = cl.error; return; }
+  const rule = cl.rule || S.rule || 'B3/S23';
+  const R = ruleTables(rule);
+  if (!R.ok) { msg.className = 'msg err'; msg.textContent = 'Rule "' + rule + '": ' + R.error; return; }
+  const cells = decodeRle(cl.rle).cells;
+  if (!cells.length) { msg.className = 'msg err'; msg.textContent = 'The pattern has no live cells.'; return; }
+  if (cells.length > 5000) { msg.className = 'msg err'; msg.textContent = 'That pattern is too big to analyse here (' + cells.length + ' cells).'; return; }
+  const comps = splitComponents(cells);
+  splitState.rule = cl.rule && cl.rule !== S.rule ? cl.rule : null;
+  splitState.objs = comps.map(cc => {
+    let info;
+    try { info = classifyObject(new Set(cc.map(p => p.join(','))), R); } catch (e) { info = {type: 'other', label: 'could not be simulated'}; }
+    const b = bbox(cc);
+    return {cells: cc, info, w: b.w, h: b.h, role: (info.type === 'still' || info.type === 'osc') ? 'bait' : 'pattern'};
+  });
+  if (splitState.rule) {
+    S.rule = splitState.rule; splitState.rule = null; $('#rule').value = S.rule;
+    msg.className = 'msg ok'; msg.textContent = 'Rule set to ' + S.rule + ' from the pasted header. ';
+  }
+  msg.textContent += comps.length + ' object' + (comps.length > 1 ? 's' : '') + ' found (simulated under ' + rule + ').';
+  renderSplitObjs(); recomputeSetups(); update();
+}
+
+document.addEventListener('change', e => {
+  if (e.target.classList && e.target.classList.contains('splitRole')) {
+    splitState.objs[+e.target.closest('.objrow').dataset.k].role = e.target.value;
+    recomputeSetups();
+  } else if (e.target.id === 'splitMerge' || e.target.id === 'splitGap') recomputeSetups();
+});
+document.addEventListener('click', async e => {
+  const b = e.target.closest('button'); if (!b) return;
+  if (b.id === 'splitGo') { analyseSplit(); return; }
+  if (b.dataset.setup !== undefined) {
+    const i = +b.dataset.setup;
+    applySetupTo(S, splitState.setups[i], i + 1, splitState.setups.length, true);
+    fullRender();
+    const m = $('#splitMsg'); m.className = 'msg ok'; m.textContent = 'Setup ' + (i + 1) + ' loaded into the form below.';
+    return;
+  }
+  const all = () => splitState.setups.map((st, i) => { const S2 = JSON.parse(JSON.stringify(S)); applySetupTo(S2, st, i + 1, splitState.setups.length); return {name: 'setup_' + (i + 1) + '.in', r: build(S2)}; });
+  if (b.id === 'splitCopyAll') {
+    const items = all(), N = items.length;
+    const text = items.map((it, i) => '# ===== setup ' + (i + 1) + ' of ' + N + ': save as ' + it.name + ' =====\n' + it.r.text).join('\n');
+    const m = $('#splitAllMsg'); m.className = 'msg ok';
+    try { await navigator.clipboard.writeText(text); m.textContent = 'Copied ' + N + ' files (separated by "# =====" lines). Remaining form issues apply to all of them.'; }
+    catch (err) { const ta = $('#out'); ta.value = text; ta.select(); m.className = 'msg warn'; m.textContent = 'Clipboard blocked: all files are in the output box on the right, press Ctrl/Cmd+C.'; }
+  } else if (b.id === 'splitSaveAll') {
+    const items = all(), m = $('#splitAllMsg'); m.className = 'msg ok';
+    try { for (const it of items) await dl.save({filename: it.name.replace(/\.in$/, '.txt'), data: it.r.text}); m.textContent = 'Saved ' + items.length + ' files.'; }
+    catch (err) { if (err && err.code !== 'declined') { m.className = 'msg warn'; m.textContent = 'Could not save: use Copy instead.'; } }
+  }
+});
+
+function fullRender() { syncStatic(); renderAreas(); renderCats(); renderBaits(); renderFilters(); $('#ruleDetect').textContent = ''; update(); }
+initStatic(); fullRender();
+if (window.matchMedia) matchMedia('(prefers-color-scheme: dark)').addEventListener('change', () => update());
+</script>
+</body>
+</html>
