@@ -29,7 +29,20 @@
 #include <immintrin.h>
 #endif
 
-#define N 64
+// Torus size (N x N). The default build is 64; `make CatForce128` builds a
+// 128x128 version (keyword "torus 128" in the .in file switches to it).
+#ifndef CATFORCE_N
+#define CATFORCE_N 64
+#endif
+#define N CATFORCE_N
+
+#if N == 64
+typedef uint64_t row_t;
+#elif N == 128
+typedef unsigned __int128 row_t;
+#else
+#error "CATFORCE_N must be 64 or 128"
+#endif
 
 #define SUCCESS 1
 #define FAIL 0
@@ -74,15 +87,51 @@ inline int __builtin_ctzll(uint64_t x) {
 }
 #endif
 
-inline uint64_t convolve_uint64_t(uint64_t x, uint64_t y) {
+// Row helpers: a row (one column of the torus) is N bits.
+#if N == 64
+inline row_t RowRotl(row_t x, unsigned k) { return __builtin_rotateleft64(x, k); }
+inline row_t RowRotr(row_t x, unsigned k) { return __builtin_rotateright64(x, k); }
+inline int RowPop(row_t x) { return __builtin_popcountll(x); }
+inline int RowCtz(row_t x) { return __builtin_ctzll(x); }
+inline int RowClz(row_t x) { return __builtin_clzll(x); }
+inline row_t RowReverse(row_t x) { return __builtin_bitreverse64(x); }
+inline uint64_t RowFold(row_t x) { return x; }
+#else
+inline row_t RowRotl(row_t x, unsigned k) {
+  k &= N - 1;
+  return k ? (x << k) | (x >> (N - k)) : x;
+}
+inline row_t RowRotr(row_t x, unsigned k) {
+  k &= N - 1;
+  return k ? (x >> k) | (x << (N - k)) : x;
+}
+inline int RowPop(row_t x) { return __builtin_popcountll((uint64_t)x) + __builtin_popcountll((uint64_t)(x >> 64)); }
+inline int RowCtz(row_t x) { // x != 0
+  uint64_t lo = (uint64_t)x;
+  return lo ? __builtin_ctzll(lo) : 64 + __builtin_ctzll((uint64_t)(x >> 64));
+}
+inline int RowClz(row_t x) { // x != 0
+  uint64_t hi = (uint64_t)(x >> 64);
+  return hi ? __builtin_clzll(hi) : 64 + __builtin_clzll((uint64_t)x);
+}
+inline row_t RowReverse(row_t x) {
+  return ((row_t)__builtin_bitreverse64((uint64_t)x) << 64) | __builtin_bitreverse64((uint64_t)(x >> 64));
+}
+inline uint64_t RowFold(row_t x) { return (uint64_t)x ^ ((uint64_t)(x >> 64) * 0x9E3779B97F4A7C15ULL); }
+#endif
+static const row_t ROW_ALL = ~(row_t)0;
+// bit 4k set for every k (the 4-row groups of the table stepper)
+static const row_t ROW_EVERY4 = (row_t)0x1111111111111111ULL | ((row_t)0x1111111111111111ULL << (N - 64));
+
+inline row_t convolve_row(row_t x, row_t y) {
   if(y == 0)
     return 0;
 
-  uint64_t result = 0;
+  row_t result = 0;
   while (x != 0) {
-    int lsb = __builtin_ctzll(x);
-    result |= __builtin_rotateleft64(y, lsb);
-    x &= ~(((uint64_t)1) << lsb);
+    int lsb = RowCtz(x);
+    result |= RowRotl(y, lsb);
+    x &= ~(((row_t)1) << lsb);
   }
   return result;
 }
@@ -168,22 +217,17 @@ enum StaticSymmetry {
   D8even,
 };
 
-inline uint64_t RotateLeft(uint64_t x, unsigned int k) {
-  return __builtin_rotateleft64(x, k);
-}
+inline row_t RotateLeft(row_t x, unsigned int k) { return RowRotl(x, k); }
+inline row_t RotateRight(row_t x, unsigned int k) { return RowRotr(x, k); }
 
-inline uint64_t RotateRight(uint64_t x, unsigned int k) {
-  return __builtin_rotateright64(x, k);
-}
-
-inline uint64_t RotateLeft(uint64_t x) { return RotateLeft(x, 1); }
-inline uint64_t RotateRight(uint64_t x) { return RotateRight(x, 1); }
+inline row_t RotateLeft(row_t x) { return RotateLeft(x, 1); }
+inline row_t RotateRight(row_t x) { return RotateRight(x, 1); }
 
 class LifeTarget;
 
 class LifeState {
 public:
-  uint64_t state[N];
+  row_t state[N];
 
   int min;
   int max;
@@ -191,30 +235,30 @@ public:
 
   LifeState() : state{0}, min(0), max(N - 1), gen(0) {}
 
-  void Set(int x, int y) { state[x] |= (1ULL << (y)); }
-  void Erase(int x, int y) { state[x] &= ~(1ULL << (y)); }
-  int Get(int x, int y) const { return (state[x] & (1ULL << y)) >> y; }
+  void Set(int x, int y) { state[x] |= ((row_t)1 << (y)); }
+  void Erase(int x, int y) { state[x] &= ~((row_t)1 << (y)); }
+  int Get(int x, int y) const { return (int)((state[x] >> y) & 1); }
   void SetCell(int x, int y, int val) {
     if (val == 1) {
-      Set((x + 64) % N, (y + 64) % 64);
+      Set((x + N) % N, (y + N) % N);
     }
     if (val == 0)
-      Erase((x + 64) % N, (y + 64) % 64);
+      Erase((x + N) % N, (y + N) % N);
   }
   int GetCell(int x, int y) const {
-    return Get((x + 64) % N, (y + 64) % 64);
+    return Get((x + N) % N, (y + N) % N);
   }
   uint64_t GetHash() const {
-    uint64_t result = 0;
+    row_t result = 0;
 
     for (int i = 0; i < N; i++) {
       result += RotateLeft(state[i], (int)(i / 2));
     }
 
-    return result;
+    return RowFold(result);
   }
 
-#ifdef __AVX2__
+#if defined(__AVX2__) && N == 64
   void RecalculateMinMax() {
     min = 0;
     max = N - 1;
@@ -310,18 +354,18 @@ public:
   void Copy(const LifeState &delta) { Copy(delta, COPY); }
 
   inline void Copy(const LifeState &delta, int x, int y) {
-    uint64_t temp1[N] = {0};
+    row_t temp1[N] = {0};
 
     if (x < 0)
       x += N;
     if (y < 0)
-      y += 64;
+      y += N;
 
     for (int i = delta.min; i <= delta.max; i++)
       temp1[i] = RotateLeft(delta.state[i], y);
 
-    memmove(state, temp1 + (N - x), x * sizeof(uint64_t));
-    memmove(state + x, temp1, (N - x) * sizeof(uint64_t));
+    memmove(state, temp1 + (N - x), x * sizeof(row_t));
+    memmove(state + x, temp1, (N - x) * sizeof(row_t));
 
     min = 0;
     max = N - 1;
@@ -330,12 +374,12 @@ public:
   void Join(const LifeState &delta) { Copy(delta, OR); }
 
   void Join(const LifeState &delta, int x, int y) {
-    uint64_t temp[2*N] = {0};
+    row_t temp[2*N] = {0};
 
     if (x < 0)
       x += N;
     if (y < 0)
-      y += 64;
+      y += N;
 
     for (int i = 0; i < N; i++) {
       temp[i]   = RotateLeft(delta.state[i], y);
@@ -386,7 +430,7 @@ public:
     unsigned pop = 0;
 
     for (int i = min; i <= max; i++) {
-      pop += __builtin_popcountll(state[i]);
+      pop += RowPop(state[i]);
     }
 
     return pop;
@@ -402,7 +446,7 @@ public:
   // }
 
   bool IsEmpty() const {
-    uint64_t all = 0;
+    row_t all = 0;
     for (int i = 0; i < N; i++) {
       all |= state[i];
     }
@@ -481,10 +525,10 @@ public:
     int min = 0;
     int max = N - 1;
 
-    uint64_t differences = 0;
+    row_t differences = 0;
     #pragma clang loop vectorize(enable)
     for (int i = min; i <= max; i++) {
-      uint64_t difference = (~state[i] & pat.state[i]) ^ (pat.state[i]);
+      row_t difference = (~state[i] & pat.state[i]) ^ (pat.state[i]);
       differences |= difference;
     }
 
@@ -495,10 +539,10 @@ public:
     int min = 0;
     int max = N - 1;
 
-    uint64_t differences = 0;
+    row_t differences = 0;
     #pragma clang loop vectorize(enable)
     for (int i = min; i <= max; i++) {
-      uint64_t difference = (state[i] & pat.state[i]) ^ (pat.state[i]);
+      row_t difference = (state[i] & pat.state[i]) ^ (pat.state[i]);
       differences |= difference;
     }
 
@@ -509,7 +553,7 @@ public:
     int min = pat.min;
     int max = pat.max;
 
-    int dy = (targetDy + 64) % 64;
+    int dy = (targetDy + N) % N;
 
     for (int i = min; i <= max; i++) {
       int curX = (N + i + targetDx) % N;
@@ -523,7 +567,7 @@ public:
   bool AreDisjoint(const LifeState &pat, int targetDx, int targetDy) const {
     int min = pat.min;
     int max = pat.max;
-    int dy = (targetDy + 64) % 64;
+    int dy = (targetDy + N) % N;
 
     for (int i = min; i <= max; i++) {
       int curX = (N + i + targetDx) % N;
@@ -543,19 +587,19 @@ public:
       int l = idxS + i;
       int r = idxE - i;
 
-      uint64_t temp = state[l];
+      row_t temp = state[l];
       state[l] = state[r];
       state[r] = temp;
     }
   }
 
   void Move(int x, int y) {
-    uint64_t temp[2*N] = {0};
+    row_t temp[2*N] = {0};
 
     if (x < 0)
       x += N;
     if (y < 0)
-      y += 64;
+      y += N;
 
     for (int i = 0; i < N; i++) {
       temp[i]   = RotateLeft(state[i], y);
@@ -578,7 +622,7 @@ public:
 
   void BitReverse() {
     for (int i = 0; i < N; i++) {
-      state[i] = __builtin_bitreverse64(state[i]);
+      state[i] = RowReverse(state[i]);
     }
   }
 
@@ -588,10 +632,10 @@ public:
 
   void Transpose(bool whichDiagonal) {
     int j, k;
-    uint64_t m, t;
+    row_t m, t;
 
-    for (j = 32, m = 0x00000000FFFFFFFF; j; j >>= 1, m ^= m << j) {
-      for (k = 0; k < 64; k = ((k | j) + 1) & ~j) {
+    for (j = N / 2, m = ROW_ALL >> (N / 2); j; j >>= 1, m ^= m << j) {
+      for (k = 0; k < N; k = ((k | j) + 1) & ~j) {
         if (whichDiagonal) {
           t = (state[k] ^ (state[k | j] >> j)) & m;
           state[k] ^= t;
@@ -623,7 +667,7 @@ public:
     LifeState temp;
     LifeState boundary;
     for (int i = 0; i < N; i++) {
-      uint64_t col = state[i];
+      row_t col = state[i];
       temp.state[i] = col | RotateLeft(col) | RotateRight(col);
     }
 
@@ -676,47 +720,50 @@ public:
     return zoi;
   }
 
-  static inline void ConvolveInner(LifeState &result, const uint64_t (&doubledother)[N*2], uint64_t x, unsigned int k, unsigned int postshift) {
+  static inline void ConvolveInner(LifeState &result, const row_t (&doubledother)[N*2], row_t x, unsigned int k, unsigned int postshift) {
     for (int i = 0; i < N; i++) {
-      result.state[i] |= __builtin_rotateleft64(convolve_uint64_t(x, doubledother[i+k]), postshift);
+      result.state[i] |= RowRotl(convolve_row(x, doubledother[i+k]), postshift);
     }
   }
 
   LifeState Convolve(const LifeState &other) const {
     LifeState result;
-    uint64_t doubledother[N*2];
-    memcpy(doubledother,     other.state, N * sizeof(uint64_t));
-    memcpy(doubledother + N, other.state, N * sizeof(uint64_t));
+    row_t doubledother[N*2];
+    memcpy(doubledother,     other.state, N * sizeof(row_t));
+    memcpy(doubledother + N, other.state, N * sizeof(row_t));
 
     for (unsigned j = 0; j < N; j++) {
-      unsigned k = 64-j;
-      uint64_t x = state[j];
+      unsigned k = N-j;
+      row_t x = state[j];
 
       // Annoying special case
-      if(x == ~0ULL) {
-        ConvolveInner(result, doubledother, ~0ULL, k, 0);
+      if(x == ROW_ALL) {
+        ConvolveInner(result, doubledother, ROW_ALL, k, 0);
         continue;
       }
 
     while (x != 0) {
       unsigned int postshift;
 
-      uint64_t shifted;
+      row_t shifted;
 
       if((x & 1) == 0) { // Possibly wrapped
-        int lsb = __builtin_ctzll(x);
-        shifted = __builtin_rotateright64(x, lsb);
+        int lsb = RowCtz(x);
+        shifted = RowRotr(x, lsb);
         postshift = lsb;
       } else{
-        int lead = __builtin_clzll(~x);
-        shifted = __builtin_rotateleft64(x, lead);
-        postshift = 64-lead;
+        int lead = RowClz(~x);
+        shifted = RowRotl(x, lead);
+        postshift = N-lead;
       }
 
-      unsigned runlength = __builtin_ctzll(~shifted);
+      unsigned runlength = RowCtz(~shifted);
       runlength = std::min(runlength, (unsigned)32);
-      uint64_t run = (1ULL << runlength) - 1;
+      row_t run = ((row_t)1 << runlength) - 1;
 
+#if N != 64
+      ConvolveInner(result, doubledother, run, k, postshift);
+#else
       switch(run) {
       case (1 << 1) - 1: ConvolveInner(result, doubledother, run, k, postshift); break;
       case (1 << 2) - 1: ConvolveInner(result, doubledother, run, k, postshift); break;
@@ -752,8 +799,9 @@ public:
       case (1ULL << 32) - 1: ConvolveInner(result, doubledother, run, k, postshift); break;
       default:           ConvolveInner(result, doubledother, run, k, postshift); break;
       }
+#endif
 
-      x &= ~__builtin_rotateleft64(run, postshift);
+      x &= ~RowRotl(run, postshift);
     }
     }
 
@@ -795,30 +843,30 @@ public:
   LifeState Match(const LifeTarget &target) const;
 
 private:
-  void inline Add(uint64_t &b1, uint64_t &b0, const uint64_t &val) {
+  void inline Add(row_t &b1, row_t &b0, const row_t &val) {
     b1 |= b0 & val;
     b0 ^= val;
   }
 
-  void inline Add(uint64_t &b2, uint64_t &b1, uint64_t &b0,
-                  const uint64_t &val) {
-    uint64_t t_b2 = b0 & val;
+  void inline Add(row_t &b2, row_t &b1, row_t &b0,
+                  const row_t &val) {
+    row_t t_b2 = b0 & val;
 
     b2 |= t_b2 & b1;
     b1 ^= t_b2;
     b0 ^= val;
   }
 
-  uint64_t inline Evolve(const uint64_t &temp, const uint64_t &bU0,
-                         const uint64_t &bU1, const uint64_t &bB0,
-                         const uint64_t &bB1) {
-    uint64_t sum0 = RotateLeft(temp);
+  row_t inline Evolve(const row_t &temp, const row_t &bU0,
+                         const row_t &bU1, const row_t &bB0,
+                         const row_t &bB1) {
+    row_t sum0 = RotateLeft(temp);
 
-    uint64_t sum1 = 0;
+    row_t sum1 = 0;
     Add(sum1, sum0, RotateRight(temp));
     Add(sum1, sum0, bU0);
 
-    uint64_t sum2 = 0;
+    row_t sum2 = 0;
     Add(sum2, sum1, bU1);
     Add(sum2, sum1, sum0, bB0);
     Add(sum2, sum1, bB1);
@@ -828,15 +876,15 @@ private:
 
   // From Page 15 of
   // https://www.gathering4gardner.org/g4g13gift/math/RokickiTomas-GiftExchange-LifeAlgorithms-G4G13.pdf
-  uint64_t inline Rokicki(const uint64_t &a, const uint64_t &bU0,
-                          const uint64_t &bU1, const uint64_t &bB0,
-                          const uint64_t &bB1) const {
-    uint64_t aw = RotateLeft(a);
-    uint64_t ae = RotateRight(a);
-    uint64_t s0 = aw ^ ae;
-    uint64_t s1 = aw & ae;
-    uint64_t ts0 = bB0 ^ bU0;
-    uint64_t ts1 = (bB0 & bU0) | (ts0 & s0);
+  row_t inline Rokicki(const row_t &a, const row_t &bU0,
+                          const row_t &bU1, const row_t &bB0,
+                          const row_t &bB1) const {
+    row_t aw = RotateLeft(a);
+    row_t ae = RotateRight(a);
+    row_t s0 = aw ^ ae;
+    row_t s1 = aw & ae;
+    row_t ts0 = bB0 ^ bU0;
+    row_t ts1 = (bB0 & bU0) | (ts0 & s0);
     return (bB1 ^ bU1 ^ ts1 ^ s1) & ((bB1 | bU1) ^ (ts1 | s1)) &
            ((ts0 ^ s0) | a);
   }
@@ -846,7 +894,7 @@ public:
   // Next generation of only the columns selected by `cols` (bit i = column i),
   // written to out[i]; other entries of out are not touched. Equal to Step()'s
   // result for those columns, but costs only as much as the columns requested.
-  void StepColumnsInto(uint64_t cols, uint64_t *out) const;
+  void StepColumnsInto(row_t cols, row_t *out) const;
 
   void Step(int numIters) {
     for (int i = 0; i < numIters; i++) {
@@ -904,14 +952,15 @@ public:
   static LifeState RandomState() {
     LifeState result;
     for (int i = 0; i < N; i++)
-      result.state[i] = PRNG::dist(PRNG::e2);
+      for (int b = 0; b < N; b += 64)
+        result.state[i] |= (row_t)PRNG::dist(PRNG::e2) << b;
 
     result.RecalculateMinMax();
 
     return result;
   }
 
-#ifdef __AVX2__
+#if defined(__AVX2__) && N == 64
   // https://stackoverflow.com/questions/56153183/is-using-avx2-can-implement-a-faster-processing-of-lzcnt-on-a-word-array
   std::pair<int, int> FirstOn() const
   {
@@ -946,39 +995,37 @@ public:
   }
 #else
   std::pair<int, int> FirstOn() const {
-    int foundq = 64;
+    int foundq = N;
     for (int x = 0; x < N; x+=4) {
-      if (state[x] != 0ULL ||
-          state[x+1] != 0ULL ||
-          state[x+2] != 0ULL ||
-          state[x+3] != 0ULL) {
+      if (state[x] != 0 ||
+          state[x+1] != 0 ||
+          state[x+2] != 0 ||
+          state[x+3] != 0) {
         foundq = x;
       }
     }
-    if (foundq == 64) {
+    if (foundq == N) {
       return std::make_pair(0, 0);
     }
 
-    int foundx;
-    if (state[foundq] != 0ULL) {
+    int foundx = foundq + 3;
+    if (state[foundq] != 0) {
       foundx = foundq;
-    } else if (state[foundq + 1] != 0ULL) {
+    } else if (state[foundq + 1] != 0) {
       foundx = foundq + 1;
-    } else if (state[foundq + 2] != 0ULL) {
+    } else if (state[foundq + 2] != 0) {
       foundx = foundq + 2;
-    } else if (state[foundq + 3] != 0ULL) {
-      foundx = foundq + 3;
     }
-    return std::make_pair(foundx, __builtin_ctzll(state[foundx]));
+    return std::make_pair(foundx, RowCtz(state[foundx]));
   }
 #endif
 
   static LifeState SolidRect(int x, int y, int w, int h) {
-    uint64_t column;
-    if (h < 64)
-      column = RotateLeft(((uint64_t)1 << h) - 1, y);
+    row_t column;
+    if (h < N)
+      column = RotateLeft(((row_t)1 << h) - 1, y);
     else
-      column = ~0ULL;
+      column = ROW_ALL;
 
     unsigned start, end;
     if (w < N) {
@@ -1003,35 +1050,35 @@ public:
   }
 
   std::array<int, 4> XYBounds() const {
-    int minCol = -32;
-    int maxCol = 31;
+    int minCol = -N / 2;
+    int maxCol = N / 2 - 1;
 
-    for (int i = -32; i <= 31; i++) {
-      if (state[(i + 64) % 64] != 0) {
+    for (int i = -N / 2; i <= N / 2 - 1; i++) {
+      if (state[(i + N) % N] != 0) {
         minCol = i;
         break;
       }
     }
 
-    for (int i = 31; i >= -32; i--) {
-      if (state[(i + 64) % 64] != 0) {
+    for (int i = N / 2 - 1; i >= -N / 2; i--) {
+      if (state[(i + N) % N] != 0) {
         maxCol = i;
         break;
       }
     }
 
-    uint64_t orOfCols(0);
+    row_t orOfCols(0);
     for (int i = minCol; i <= maxCol; ++i) {
-      orOfCols = orOfCols | state[(i + 64) % 64];
+      orOfCols = orOfCols | state[(i + N) % N];
     }
-    if (orOfCols == 0ULL) {
+    if (orOfCols == 0) {
       return std::array<int, 4>({0, 0, 0, 0});
     }
-    orOfCols = __builtin_rotateright64(orOfCols, 32);
-    int topMargin = __builtin_ctzll(orOfCols);
-    int bottomMargin = __builtin_clzll(orOfCols);
+    orOfCols = RowRotr(orOfCols, N / 2);
+    int topMargin = RowCtz(orOfCols);
+    int bottomMargin = RowClz(orOfCols);
     return std::array<int, 4>(
-        {minCol, topMargin - 32, maxCol, 31 - bottomMargin});
+        {minCol, topMargin - N / 2, maxCol, N / 2 - 1 - bottomMargin});
   }
 };
 
@@ -1060,8 +1107,8 @@ static uint8_t winTable[1u << 18];
 // Rule-specific compiled kernels (see RuleCompiler.h and --compile-rule). When
 // the current rule has one built into this binary and it passes its self-check,
 // Step() uses it instead of the table stepper.
-typedef void (*CompiledStepFn)(uint64_t *state);
-typedef void (*CompiledColsFn)(const uint64_t *state, uint64_t cols, uint64_t *out);
+typedef void (*CompiledStepFn)(row_t *state);
+typedef void (*CompiledColsFn)(const row_t *state, row_t cols, row_t *out);
 static CompiledStepFn compiledStep = nullptr;
 static CompiledColsFn compiledCols = nullptr;
 static std::string compiledInfo;
@@ -1450,46 +1497,46 @@ static std::string RuleDescription() {
 // cache used to sit in front of this; measured on recorded search states it was
 // 1.5-2x slower than looking the windows up directly, so it was removed.)
 
-static inline uint64_t StepColumnSlow(uint64_t a, uint64_t b, uint64_t c) {
-  uint64_t m = a | b | c;
-  uint64_t d = m | RotateLeft(m) | RotateRight(m);          // rows that can change
-  uint64_t g = d | (d >> 1) | (d >> 2) | (d >> 3);          // bit 4k set if group k (rows 4k..4k+3) may change
-  g &= 0x1111111111111111ULL;
-  uint64_t out = 0;
+static inline row_t StepColumnSlow(row_t a, row_t b, row_t c) {
+  row_t m = a | b | c;
+  row_t d = m | RotateLeft(m) | RotateRight(m);          // rows that can change
+  row_t g = d | (d >> 1) | (d >> 2) | (d >> 3);          // bit 4k set if group k (rows 4k..4k+3) may change
+  g &= ROW_EVERY4;
+  row_t out = 0;
   while (g) {
-    int pos = __builtin_ctzll(g);                            // = 4k
+    int pos = RowCtz(g);                                     // = 4k
     g &= g - 1;
     int sh = pos - 1;                                        // window starts one row above the group
     unsigned idx = (unsigned)(RotateRight(a, sh) & 0x3F) |
                    ((unsigned)(RotateRight(b, sh) & 0x3F) << 6) |
                    ((unsigned)(RotateRight(c, sh) & 0x3F) << 12);
-    out |= (uint64_t)winTable[idx] << pos;
+    out |= (row_t)winTable[idx] << pos;
   }
   return out;
 }
 
 
-static void StepTable(uint64_t *state) {
+static void StepTable(row_t *state) {
   // Bit i of nz is set if column i has any live cell; only those columns and
   // their two neighbours can be non-empty in the next generation (every other
   // column is empty and stays empty, since B0 rules are rejected).
-  uint64_t nz = 0;
+  row_t nz = 0;
   for (int i = 0; i < N; i++)
-    nz |= (uint64_t)(state[i] != 0) << i;
-  uint64_t todo = nz | RotateLeft(nz) | RotateRight(nz);
+    nz |= (row_t)(state[i] != 0) << i;
+  row_t todo = nz | RotateLeft(nz) | RotateRight(nz);
 
   // Columns are updated in place, in increasing order. Column i needs the old
   // values of columns i-1, i and i+1: i+1 is not updated yet, the old i-1 is
   // remembered, and the two wrap-around neighbours are saved up front.
-  const uint64_t oldFirst = state[0], oldLast = state[N - 1];
+  const row_t oldFirst = state[0], oldLast = state[N - 1];
   int lastIdx = -2;
-  uint64_t lastOld = 0;
+  row_t lastOld = 0;
   while (todo) {
-    int i = __builtin_ctzll(todo);
+    int i = RowCtz(todo);
     todo &= todo - 1;
-    uint64_t left = (i == 0) ? oldLast : (lastIdx == i - 1 ? lastOld : state[i - 1]);
-    uint64_t right = (i == N - 1) ? oldFirst : state[i + 1];
-    uint64_t cur = state[i];
+    row_t left = (i == 0) ? oldLast : (lastIdx == i - 1 ? lastOld : state[i - 1]);
+    row_t right = (i == N - 1) ? oldFirst : state[i + 1];
+    row_t cur = state[i];
     state[i] = StepColumnSlow(left, cur, right);
     lastIdx = i;
     lastOld = cur;
@@ -1497,9 +1544,9 @@ static void StepTable(uint64_t *state) {
 }
 
 // Bit i of the result is set iff column i has any live cell.
-static inline uint64_t NonEmptyColumns(const uint64_t *state) {
-  uint64_t nz = 0;
-#ifdef __AVX2__
+static inline row_t NonEmptyColumns(const row_t *state) {
+  row_t nz = 0;
+#if defined(__AVX2__) && N == 64
   for (int i = 0; i < N; i += 4) {
     __m256i v = _mm256_loadu_si256((const __m256i *)(state + i));
     unsigned zero = (unsigned)_mm256_movemask_pd(_mm256_castsi256_pd(_mm256_cmpeq_epi64(v, _mm256_setzero_si256())));
@@ -1507,13 +1554,16 @@ static inline uint64_t NonEmptyColumns(const uint64_t *state) {
   }
 #else
   for (int i = 0; i < N; i++)
-    nz |= (uint64_t)(state[i] != 0) << i;
+    nz |= (row_t)(state[i] != 0) << i;
 #endif
   return nz;
 }
 
 #if defined(__GNUC__) || defined(__clang__)
 // Four columns per SIMD vector (AVX2 on x86; two NEON registers on ARM).
+// Kernels shift by RK_TOP (= row width - 1) to rotate a column by one row.
+#define RK_TOP (N - 1)
+#if N == 64
 typedef uint64_t RuleVec __attribute__((vector_size(32)));
 
 // One generation with a compiled column kernel K: the columns next to live
@@ -1576,6 +1626,34 @@ static void StepColsCompiledTmpl(const uint64_t *state, uint64_t cols, uint64_t 
   for (int j = 0; j < n; j++)
     out[idx[j]] = O[j];
 }
+#else
+// Wider torus: a column does not fit a SIMD lane, so the kernel runs on one
+// whole column at a time.
+typedef row_t RuleVec;
+
+template <RuleVec (*K)(RuleVec, RuleVec, RuleVec)>
+static void StepCompiledTmpl(row_t *state) {
+  row_t nz = NonEmptyColumns(state);
+  row_t todo = nz | RotateLeft(nz) | RotateRight(nz);
+  row_t O[N];
+  for (row_t bits = todo; bits; bits &= bits - 1) {
+    int i = RowCtz(bits);
+    O[i] = K(state[(i - 1) & (N - 1)], state[i], state[(i + 1) & (N - 1)]);
+  }
+  for (row_t bits = todo; bits; bits &= bits - 1) {
+    int i = RowCtz(bits);
+    state[i] = O[i];
+  }
+}
+
+template <RuleVec (*K)(RuleVec, RuleVec, RuleVec)>
+static void StepColsCompiledTmpl(const row_t *state, row_t cols, row_t *out) {
+  for (; cols; cols &= cols - 1) {
+    int i = RowCtz(cols);
+    out[i] = K(state[(i - 1) & (N - 1)], state[i], state[(i + 1) & (N - 1)]);
+  }
+}
+#endif
 
 struct CompiledRuleEntry {
   const char *key;  // RuleTableKey() of the rule
@@ -1622,11 +1700,15 @@ static void SelectCompiledKernel() {
     return seed;
   };
   for (int t = 0; t < 200; t++) {
-    uint64_t a[N], b[N];
+    row_t a[N], b[N];
     for (int i = 0; i < N; i++) {
-      uint64_t w = rnd() & rnd();
-      if (t % 2) w &= rnd();
-      if (t % 3 == 0 && i > 8 && i < 56) w = 0;
+      row_t w = 0;
+      for (int k = 0; k < N; k += 64) {
+        uint64_t part = rnd() & rnd();
+        if (t % 2) part &= rnd();
+        w |= (row_t)part << k;
+      }
+      if (t % 3 == 0 && i > 8 && i < N - 8) w = 0;
       a[i] = b[i] = w;
     }
     for (int s = 0; s < 4; s++) {
@@ -1647,15 +1729,15 @@ static void SelectCompiledKernel() {
     auto start = std::chrono::steady_clock::now();
     uint64_t sink = 0;
     for (int t = 0; t < 400; t++) {
-      uint64_t a[N] = {0};
+      row_t a[N] = {0};
       for (int i = 24; i < 40; i++) {
         s2 = s2 * 6364136223846793005ULL + 1442695040888963407ULL;
         uint64_t w = s2 ^ (s2 >> 29);
-        a[i] = w & (w >> 7) & 0x00FFFF0000ULL;
+        a[i] = (row_t)(w & (w >> 7) & 0x00FFFF0000ULL);
       }
       for (int s = 0; s < 8; s++)
         f(a);
-      sink += a[30];
+      sink += (uint64_t)a[30];
     }
     double ns = std::chrono::duration<double, std::nano>(std::chrono::steady_clock::now() - start).count();
     return ns + (sink == 42 ? 1 : 0);
@@ -1690,22 +1772,22 @@ void LifeState::Step() {
 
   // Only columns that contain live cells, and their two neighbours, can be
   // non-empty next generation; every other column is empty and stays empty.
-  uint64_t nz = NonEmptyColumns(state);
-  uint64_t todo = nz | RotateLeft(nz) | RotateRight(nz);
+  row_t nz = NonEmptyColumns(state);
+  row_t todo = nz | RotateLeft(nz) | RotateRight(nz);
 
-  uint64_t newst[N]; // only the entries for columns in `todo` are written/read
-  for (uint64_t bits = todo; bits; bits &= bits - 1) {
-    int i = __builtin_ctzll(bits);
-    uint64_t up = state[(i - 1) & (N - 1)], dn = state[(i + 1) & (N - 1)];
+  row_t newst[N]; // only the entries for columns in `todo` are written/read
+  for (row_t bits = todo; bits; bits &= bits - 1) {
+    int i = RowCtz(bits);
+    row_t up = state[(i - 1) & (N - 1)], dn = state[(i + 1) & (N - 1)];
     // vertical 3-cell sums of the neighbouring columns (zero if they are empty)
-    uint64_t ul = RotateLeft(up), ur = RotateRight(up);
-    uint64_t dl = RotateLeft(dn), dr = RotateRight(dn);
-    uint64_t uxor = ul ^ ur ^ up, uand = ((ul ^ ur) & up) | (ul & ur);
-    uint64_t dxor = dl ^ dr ^ dn, dand = ((dl ^ dr) & dn) | (dl & dr);
+    row_t ul = RotateLeft(up), ur = RotateRight(up);
+    row_t dl = RotateLeft(dn), dr = RotateRight(dn);
+    row_t uxor = ul ^ ur ^ up, uand = ((ul ^ ur) & up) | (ul & ur);
+    row_t dxor = dl ^ dr ^ dn, dand = ((dl ^ dr) & dn) | (dl & dr);
     newst[i] = Rokicki(state[i], uxor, uand, dxor, dand);
   }
-  for (uint64_t bits = todo; bits; bits &= bits - 1) {
-    int i = __builtin_ctzll(bits);
+  for (row_t bits = todo; bits; bits &= bits - 1) {
+    int i = RowCtz(bits);
     state[i] = newst[i];
   }
 
@@ -1714,25 +1796,25 @@ void LifeState::Step() {
   gen++;
 }
 
-void LifeState::StepColumnsInto(uint64_t cols, uint64_t *out) const {
+void LifeState::StepColumnsInto(row_t cols, row_t *out) const {
   if (!useFastLife && compiledCols) {
     compiledCols(state, cols, out);
     return;
   }
   if (!useFastLife) {
-    for (uint64_t bits = cols; bits; bits &= bits - 1) {
-      int i = __builtin_ctzll(bits);
+    for (row_t bits = cols; bits; bits &= bits - 1) {
+      int i = RowCtz(bits);
       out[i] = StepColumnSlow(state[(i - 1) & (N - 1)], state[i], state[(i + 1) & (N - 1)]);
     }
     return;
   }
-  for (uint64_t bits = cols; bits; bits &= bits - 1) {
-    int i = __builtin_ctzll(bits);
-    uint64_t up = state[(i - 1) & (N - 1)], dn = state[(i + 1) & (N - 1)];
-    uint64_t ul = RotateLeft(up), ur = RotateRight(up);
-    uint64_t dl = RotateLeft(dn), dr = RotateRight(dn);
-    uint64_t uxor = ul ^ ur ^ up, uand = ((ul ^ ur) & up) | (ul & ur);
-    uint64_t dxor = dl ^ dr ^ dn, dand = ((dl ^ dr) & dn) | (dl & dr);
+  for (row_t bits = cols; bits; bits &= bits - 1) {
+    int i = RowCtz(bits);
+    row_t up = state[(i - 1) & (N - 1)], dn = state[(i + 1) & (N - 1)];
+    row_t ul = RotateLeft(up), ur = RotateRight(up);
+    row_t dl = RotateLeft(dn), dr = RotateRight(dn);
+    row_t uxor = ul ^ ur ^ up, uand = ((ul ^ ur) & up) | (ul & ur);
+    row_t dxor = dl ^ dr ^ dn, dand = ((dl ^ dr) & dn) | (dl & dr);
     out[i] = Rokicki(state[i], uxor, uand, dxor, dand);
   }
 }
@@ -1808,16 +1890,16 @@ void LifeState::Transform(SymmetryTransform transf) {
 }
 
 void LifeState::Print() const {
-  for (int j = 0; j < 64; j++) {
+  for (int j = 0; j < N; j++) {
     for (int i = 0; i < N; i++) {
-      if (GetCell(i - 32, j - 32) == 0) {
+      if (GetCell(i - N / 2, j - N / 2) == 0) {
         int hor = 0;
         int ver = 0;
 
-        if ((j - 32) % 10 == 0)
+        if ((j - N / 2) % 10 == 0)
           hor = 1;
 
-        if ((i - 32) % 10 == 0)
+        if ((i - N / 2) % 10 == 0)
           ver = 1;
 
         if (hor == 1 && ver == 1)
@@ -1900,11 +1982,11 @@ std::string LifeState::RLE() const {
   unsigned eol_count = 0;
 
   for (unsigned j = 0; j < N; j++) {
-    bool last_val = GetCell(0 - 32, j - 32) == 1;
+    bool last_val = GetCell(0 - N / 2, j - N / 2) == 1;
     unsigned run_count = 0;
 
     for (unsigned i = 0; i < N; i++) {
-      bool val = GetCell(i - 32, j - 32) == 1;
+      bool val = GetCell(i - N / 2, j - N / 2) == 1;
 
       // Flush linefeeds if we find a live cell
       if (val && eol_count > 0) {

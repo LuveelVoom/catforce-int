@@ -353,8 +353,8 @@ static std::string GenerateKernel(const bool *birth, const bool *survive, const 
   std::stringstream ss;
   ss << "// rule " << ruleText << ": " << ops << " operations after the neighbour count\n";
   ss << "template <class T> static inline T " << name << "(T L, T C, T R) {\n";
-  ss << "  const T n7 = (L << 1) | (L >> 63), n6 = (C << 1) | (C >> 63), n5 = (R << 1) | (R >> 63), n4 = L, n3 = R;\n";
-  ss << "  const T n2 = (L >> 1) | (L << 63), n1 = (C >> 1) | (C << 63), n0 = (R >> 1) | (R << 63);\n";
+  ss << "  const T n7 = (L << 1) | (L >> RK_TOP), n6 = (C << 1) | (C >> RK_TOP), n5 = (R << 1) | (R >> RK_TOP), n4 = L, n3 = R;\n";
+  ss << "  const T n2 = (L >> 1) | (L << RK_TOP), n1 = (C >> 1) | (C << RK_TOP), n0 = (R >> 1) | (R << RK_TOP);\n";
   ss << "  const T a1 = n0 ^ n1, c1 = n0 & n1, a2 = n2 ^ n3, c2 = n2 & n3, a3 = n4 ^ n5, c3 = n4 & n5, a4 = n6 ^ n7, c4 = n6 & n7;\n";
   ss << "  const T x0 = a1 ^ a2, y0 = a1 & a2, x1 = a3 ^ a4, y1 = a3 & a4;\n";
   ss << "  const T b0 = x0 ^ x1, z = x0 & x1;\n";

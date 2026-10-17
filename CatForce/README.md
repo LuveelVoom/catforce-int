@@ -68,6 +68,8 @@ denote optional parameters.
 | `contact-filter`      | `yes`                    | Skip placements where the new catalyst, with no further catalysts, never comes back within max-active gens (much faster; may lose results needing a rescue) |
 | `split-level`         | `2`                      | Threads share out second-catalyst placements instead of first ones (better balance on many cores with few first placements; duplicates first-level work) |
 | `output-list`         | `file`                   | Text list of every solution: catalyst shapes and positions              |
+| `spaceship-cutoff`    | `n` or `off`             | Don't place catalysts for spaceships more than `n` cells from the rest of the reaction (default 10; see below) |
+| `torus`               | `64` or `128`            | Torus size (default 64). `128` runs `CatForce128`, built automatically on first use (see below) |
 | `include`             | `file`                   | Insert the lines of another file here (e.g. a catalyst list)            |
 | `fit-in-width-height` | `w h`                    | Only allow solutions where all catalysts fit in a `w` by `h` rectangle  |
 | `also-required`       | `rle x y`                | Require `rle` to be present in every generation                         |
@@ -225,7 +227,7 @@ quadrant empty:
     exclude-area 0 -32 32 32
 
 The area limits where a catalyst's origin (the point set by its `dx dy`) may be
-placed, not its whole extent. Coordinates: centre of the 64x64 torus is 0,0;
+placed, not its whole extent. Coordinates: centre of the 64x64 torus (or 128x128 with `torus 128`) is 0,0;
 x grows right, y grows down. The number of allowed positions is printed at
 startup, and the search stops with a message if the area ends up empty.
 
@@ -249,6 +251,37 @@ already-found one, when the active pattern (with any baits and
 `also-required` cells) has that symmetry about *any* centre and the rule is
 isotropic. The number removed is printed at the end. Add
 `keep-duplicates yes` to keep everything.
+
+**Escaped spaceships (`spaceship-cutoff`)**: a spaceship that has left the
+reaction (more than `n` cells from every other non-catalyst cell, with the
+reaction or its debris still present) no longer triggers catalyst placements,
+and the positions it passes are blocked for later catalysts (one placed there
+would have been hit by it). This removes the "extra conduits" where a later
+catalyst just eats or deflects an escaping glider far from the reaction, or a
+spaceship that wrapped around the torus. A cluster counts as a spaceship if it
+comes back moved within 32 generations when run alone. The default is 10;
+`spaceship-cutoff off` restores the old behaviour. Note that a spaceship in the
+starting pattern that is already more than `n` cells from the rest of the
+pattern is treated the same way.
+
+**History output (goal searches)**: when the file has any `filter`,
+`andfilter`, `orfilter` or `match` line, a third file `<output>_history.rle` is
+written in the rule's `History` variant (e.g. `B3/S23-q4iHistory`, open it in
+Golly 4.0 or later). It has the same layout as the main output; the starting
+pattern is in state 3 (white), so it leaves red cells where it dies, the
+catalysts are state 1 (green), and the cells where the goal pattern was found
+are state 4 (red).
+
+**Torus size (`torus 128`)**: the default torus is 64x64 (coordinates -32..31).
+With `torus 128` the search runs on a 128x128 torus (coordinates -64..63), so
+search areas can be larger and spaceships take twice as long to wrap around.
+`CatForce` then starts `CatForce128` from the same folder, building it with
+`make CatForce128` the first time (afterwards plain `make` and
+`--compile-rule` keep it up to date). Results are the same as on the 64 torus
+when nothing reaches the edge (checked on the test suite). It is slower:
+measured 2.6-3.5x per search on the test files (8x with `match` filters), and
+building the mask cache the first time for a catalyst list takes about 16x
+as long.
 
 **Output layout**: each row of solutions is drawn in a shared frame sized to
 everything those solutions touch while they run (not just their starting

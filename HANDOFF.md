@@ -56,6 +56,12 @@ Input-file keywords (all documented in README.md):
   Can lose results where a later catalyst rescues an earlier one.
 - `resume-from n` — pause/resume. On Ctrl-C or max-time the program prints `resume-from n` and writes
   `<input>.resume`. A resumed run writes outputs with suffix `_from<n>`.
+- `spaceship-cutoff n|off` (default 10) — no catalyst placements triggered by escaped spaceships
+  more than n cells from the rest of the reaction; positions they pass are masked.
+- `torus 64|128` — 128 re-executes `CatForce128` (built on demand, `-DCATFORCE_N=128`; rows are
+  `unsigned __int128`, type `row_t` in LifeAPI.h). ~2.6-3.5x slower, identical suite results.
+- Goal searches (any filter/match) also write `<output>_history.rle` in `[rule]History`
+  (start pattern state 3, catalysts 1, goal cells 4).
 - `split-level 2` — threads share second-level placements (helps many cores + few roots; slower on 2 cores).
 - Catalyst options per `cat` line: `forbidden`, `required`, `antirequired`, `locus rle x y`,
   `mustinclude`, `transparent`, `check-recovery`, `sacrificial`, `period n`, `isblinker`

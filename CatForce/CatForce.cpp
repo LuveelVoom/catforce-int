@@ -109,6 +109,11 @@ public:
   bool lightcone = true;
   bool lightconeTight = false; // unsafe: failure region = only the mismatched cells at the failure time     // prune placements that cannot reach the next catalyst failure in time
   std::string uniqueFile;    // one square per distinct outcome (default: <output>_unique.rle)
+  // Catalysts are not placed where their first contact would be with a spaceship
+  // that is more than this many cells away from every other non-catalyst cell
+  // (an escaped spaceship, e.g. a glider being eaten far from the reaction). 0 = off.
+  int spaceshipCutoff = 10;
+  int torus = N;             // torus size; a different value re-runs the CatForce<size> binary
 
   SearchParams() {
     maxGen = 250;
@@ -449,39 +454,51 @@ inline std::vector<SymmetryTransform> SymmetryChainFromEnum(const StaticSymmetry
   }
 }
 
+// Cells (x, y) in storage coordinates 0..N-1 (the same cells the old fixed
+// 64x64 RLE strings drew from the origin) where a catalyst may be placed.
 LifeState FundamentalDomain(const StaticSymmetry sym) {
+  auto build = [](bool (*inside)(int, int)) {
+    LifeState r;
+    for (int x = 0; x < N; x++)
+      for (int y = 0; y < N; y++)
+        if (inside(x, y))
+          r.Set(x, y);
+    r.RecalculateMinMax();
+    return r;
+  };
+  const int H = N / 2;
   switch (sym) {
   case StaticSymmetry::C1:
-    return LifeState::Parse("64o$64o$64o$64o$64o$64o$64o$64o$64o$64o$64o$64o$64o$64o$64o$64o$64o$64o$64o$64o$64o$64o$64o$64o$64o$64o$64o$64o$64o$64o$64o$64o$64o$64o$64o$64o$64o$64o$64o$64o$64o$64o$64o$64o$64o$64o$64o$64o$64o$64o$64o$64o$64o$64o$64o$64o$64o$64o$64o$64o$64o$64o$64o$64o!");
+    return build([](int, int) { return true; });
   case StaticSymmetry::D2AcrossY:
   case StaticSymmetry::D2AcrossYEven:
-    return LifeState::Parse("32o$32o$32o$32o$32o$32o$32o$32o$32o$32o$32o$32o$32o$32o$32o$32o$32o$32o$32o$32o$32o$32o$32o$32o$32o$32o$32o$32o$32o$32o$32o$32o$32o$32o$32o$32o$32o$32o$32o$32o$32o$32o$32o$32o$32o$32o$32o$32o$32o$32o$32o$32o$32o$32o$32o$32o$32o$32o$32o$32o$32o$32o$32o$32o!");
+    return build([](int x, int) { return x < H; });
   case StaticSymmetry::D2AcrossX:
   case StaticSymmetry::D2AcrossXEven:
-    return LifeState::Parse("64o$64o$64o$64o$64o$64o$64o$64o$64o$64o$64o$64o$64o$64o$64o$64o$64o$64o$64o$64o$64o$64o$64o$64o$64o$64o$64o$64o$64o$64o$64o$64o!");
-  case StaticSymmetry::D2diagodd:
-    return LifeState::Parse("64o$63o$62o$61o$60o$59o$58o$57o$56o$55o$54o$53o$52o$51o$50o$49o$48o$47o$46o$45o$44o$43o$42o$41o$40o$39o$38o$37o$36o$35o$34o$33o$32o$31o$30o$29o$28o$27o$26o$25o$24o$23o$22o$21o$20o$19o$18o$17o$16o$15o$14o$13o$12o$11o$10o$9o$8o$7o$6o$5o$4o$3o$2o$o!");
-  case StaticSymmetry::D2negdiagodd:
-    return LifeState::Parse("o$2o$3o$4o$5o$6o$7o$8o$9o$10o$11o$12o$13o$14o$15o$16o$17o$18o$19o$20o$21o$22o$23o$24o$25o$26o$27o$28o$29o$30o$31o$32o$33o$34o$35o$36o$37o$38o$39o$40o$41o$42o$43o$44o$45o$46o$47o$48o$49o$50o$51o$52o$53o$54o$55o$56o$57o$58o$59o$60o$61o$62o$63o$64o!");
   case StaticSymmetry::C2:
   case StaticSymmetry::C2even:
   case StaticSymmetry::C2horizontaleven:
   case StaticSymmetry::C2verticaleven:
-    return LifeState::Parse("64o$64o$64o$64o$64o$64o$64o$64o$64o$64o$64o$64o$64o$64o$64o$64o$64o$64o$64o$64o$64o$64o$64o$64o$64o$64o$64o$64o$64o$64o$64o$64o!");
+    return build([](int, int y) { return y < H; });
+  case StaticSymmetry::D2diagodd:
+    return build([](int x, int y) { return x + y <= N - 1; });
+  case StaticSymmetry::D2negdiagodd:
+    return build([](int x, int y) { return x <= y; });
   case StaticSymmetry::C4:
   case StaticSymmetry::C4even:
   case StaticSymmetry::D4:
   case StaticSymmetry::D4even:
   case StaticSymmetry::D4horizontaleven:
   case StaticSymmetry::D4verticaleven:
-    return LifeState::Parse("32o$32o$32o$32o$32o$32o$32o$32o$32o$32o$32o$32o$32o$32o$32o$32o$32o$32o$32o$32o$32o$32o$32o$32o$32o$32o$32o$32o$32o$32o$32o$32o!");
+    return build([](int x, int y) { return x < H && y < H; });
   case StaticSymmetry::D4diag:
   case StaticSymmetry::D4diageven:
-    return LifeState::Parse("o$2o$3o$4o$5o$6o$7o$8o$9o$10o$11o$12o$13o$14o$15o$16o$17o$18o$19o$20o$21o$22o$23o$24o$25o$26o$27o$28o$29o$30o$31o$32o$32o$31o$30o$29o$28o$27o$26o$25o$24o$23o$22o$21o$20o$19o$18o$17o$16o$15o$14o$13o$12o$11o$10o$9o$8o$7o$6o$5o$4o$3o$2o$o!");
+    return build([](int x, int y) { return x <= std::min(y, N - 1 - y); });
   case StaticSymmetry::D8:
   case StaticSymmetry::D8even:
-    return LifeState::Parse("o$2o$3o$4o$5o$6o$7o$8o$9o$10o$11o$12o$13o$14o$15o$16o$17o$18o$19o$20o$21o$22o$23o$24o$25o$26o$27o$28o$29o$30o$31o$32o!");
+    return build([](int x, int y) { return y < H && x <= y; });
   }
+  return LifeState();
 }
 
 StaticSymmetry SymmetryFromString(const std::string &name) {
@@ -692,7 +709,8 @@ void ReadParams(const std::string& fname, std::vector<CatalystInput> &catalysts,
         "filter", "andfilter", "orfilter", "match", "fit-in-width-height", "max-category-size",
         "symmetry", "also-required", "stop-after-cats-destroyed", "max-junk", "keep-duplicates",
         "keep-interacting", "output-gap", "bait", "threads", "max-time", "max-results", "output-list",
-        "verbose", "part", "unique-output", "lightcone", "lightcone-tight", "resume-from", "contact-filter", "split-level"};
+        "verbose", "part", "unique-output", "lightcone", "lightcone-tight", "resume-from", "contact-filter", "split-level",
+        "spaceship-cutoff", "torus"};
     bool isKnown = false;
     for (const char *k : known)
       if (elems[0] == k)
@@ -907,6 +925,15 @@ void ReadParams(const std::string& fname, std::vector<CatalystInput> &catalysts,
       params.lightcone = !(elems[1] == "no" || elems[1] == "false" || elems[1] == "0" || elems[1] == "off");
     if (elems[0] == "unique-output")
       params.uniqueFile = elems[1];
+    if (elems[0] == "spaceship-cutoff") {
+      const std::string &v = elems[1];
+      params.spaceshipCutoff = (v == "no" || v == "off" || v == "false") ? 0 : ParseIntOrDie(v, "spaceship-cutoff", 0);
+    }
+    if (elems[0] == "torus") {
+      params.torus = ParseIntOrDie(elems[1], "torus", 1);
+      if (params.torus != 64 && params.torus != 128)
+        Die("torus: " + elems[1] + " is not supported (use 64 or 128)");
+    }
     if (elems[0] == "part")
       ParsePart(elems[1], params.partIndex, params.numParts);
     if (elems[0] == "threads")
@@ -995,9 +1022,9 @@ static void OnInterrupt(int) {
 // RLE (with "!") of the live cells of `st` inside their bounding box; also
 // returns the box (top-left x0,y0 in torus coordinates, size w x h).
 static std::string BoundingBoxRle(const LifeState &st, int &x0, int &y0, int &w, int &h) {
-  int minx = 64, miny = 64, maxx = -64, maxy = -64;
-  for (int y = -32; y < 32; y++)
-    for (int x = -32; x < 32; x++)
+  int minx = N, miny = N, maxx = -N, maxy = -N;
+  for (int y = -N / 2; y < N / 2; y++)
+    for (int x = -N / 2; x < N / 2; x++)
       if (st.GetCell(x, y) == 1) {
         minx = std::min(minx, x); maxx = std::max(maxx, x);
         miny = std::min(miny, y); maxy = std::max(maxy, y);
@@ -1036,14 +1063,14 @@ static std::string BoundingBoxRle(const LifeState &st, int &x0, int &y0, int &w,
 // as recovered in any phase.
 struct TargetSet {
   std::vector<LifeTarget> alts;
-  std::vector<uint64_t> altCols; // columns where alts[i] has wanted or unwanted cells
+  std::vector<row_t> altCols; // columns where alts[i] has wanted or unwanted cells
 
   void Add(const LifeTarget &t) {
     alts.push_back(t);
-    uint64_t cols = 0;
+    row_t cols = 0;
     for (int i = 0; i < N; i++)
       if ((t.wanted.state[i] | t.unwanted.state[i]) != 0)
-        cols |= 1ULL << i;
+        cols |= (row_t)1 << i;
     altCols.push_back(cols);
   }
 
@@ -1058,9 +1085,9 @@ struct TargetSet {
     for (size_t k = 0; k < alts.size(); k++) {
       const LifeTarget &t = alts[k];
       bool ok = true;
-      for (uint64_t bits = altCols[k]; bits; bits &= bits - 1) {
-        int i = __builtin_ctzll(bits);
-        uint64_t have = state.state[i];
+      for (row_t bits = altCols[k]; bits; bits &= bits - 1) {
+        int i = RowCtz(bits);
+        row_t have = state.state[i];
         if ((t.wanted.state[i] & ~have) != 0 || (t.unwanted.state[i] & have) != 0) {
           ok = false;
           break;
@@ -1246,7 +1273,7 @@ LifeState CollisionMask(const LifeState &a, const LifeState &b, unsigned period)
 
   LifeState mask;
   for (unsigned x = 0; x < N; x++) {
-    for (unsigned y = 0; y < 64; y++) {
+    for (unsigned y = 0; y < N; y++) {
       LifeState state = a;
       state.Join(b, x, y);
 
@@ -1295,8 +1322,8 @@ static uint64_t Fnv1a(const std::string &str) {
 static uint64_t StateKey(const LifeState &st) {
   uint64_t h = 1469598103934665603ULL;
   for (int i = 0; i < N; i++) {
-    uint64_t w = st.state[i];
-    for (int b = 0; b < 8; b++) {
+    row_t w = st.state[i];
+    for (int b = 0; b < (int)sizeof(row_t); b++) {
       h ^= (w >> (8 * b)) & 0xFF;
       h *= 1099511628211ULL;
     }
@@ -1329,7 +1356,7 @@ static void WriteCacheAtomically(const std::string &fname, const char *data, siz
 LifeState LoadCollisionMask(const CatalystData &a, const CatalystData &b) {
   unsigned lcmPeriod = (a.period * b.period) / gcd(a.period, b.period);
   std::stringstream ss;
-  ss << "masks/maskraw3-" << std::hex << Fnv1a(RuleTableKey()) << "-" << StateKey(a.state) << "-"
+  ss << "masks/maskraw3-" << (N == 64 ? "" : "t" + std::to_string(N) + "-") << std::hex << Fnv1a(RuleTableKey()) << "-" << StateKey(a.state) << "-"
      << StateKey(b.state) << std::dec << "-p" << lcmPeriod;
   std::string fname = ss.str();
   // The per-pair cache is opt-in (as before): it is only used if a directory
@@ -1340,38 +1367,47 @@ LifeState LoadCollisionMask(const CatalystData &a, const CatalystData &b) {
   infile.open(fname.c_str(), std::ios::binary);
   if (!infile.good()) {
     LifeState mask = CollisionMask(a.state, b.state, lcmPeriod);
-    WriteCacheAtomically(fname, (const char *)mask.state, N * sizeof(uint64_t)); // silently skipped without masks/
+    WriteCacheAtomically(fname, (const char *)mask.state, N * sizeof(row_t)); // silently skipped without masks/
     return mask;
   } else {
     LifeState result;
-    infile.read((char*)result.state, N * sizeof(uint64_t));
+    infile.read((char*)result.state, N * sizeof(row_t));
     if (!infile) { // truncated/corrupt cache file: recompute
       infile.close();
       LifeState mask = CollisionMask(a.state, b.state, lcmPeriod);
-      WriteCacheAtomically(fname, (const char *)mask.state, N * sizeof(uint64_t));
+      WriteCacheAtomically(fname, (const char *)mask.state, N * sizeof(row_t));
       return mask;
     }
     return result;
   }
 }
 
-std::string GetRLE(const std::vector<std::vector<bool>> &life2d) {
+// RLE body of a grid indexed [x][y]. Cell values are states: 0 = dead, 1 = alive
+// (written b/o), or with `multiState` any state 0..24 (written . A B C ...),
+// as used by multi-state rules such as LifeHistory.
+std::string GetRLE(const std::vector<std::vector<uint8_t>> &life2d, bool multiState = false) {
   if (life2d.empty())
     return "";
 
   if (life2d[0].empty())
     return "";
 
+  auto symbol = [multiState](uint8_t v) -> char {
+    if (multiState)
+      return v == 0 ? '.' : (char)('A' + v - 1);
+    return v ? 'o' : 'b';
+  };
+
   std::stringstream result;
 
   unsigned eol_count = 0;
 
   for (unsigned j = 0; j < life2d[0].size(); j++) {
-    bool last_val = life2d[0][j];
+    uint8_t last_val = life2d[0][j];
     unsigned run_count = 0;
 
     for (const auto & i : life2d) {
-      bool val = i[j];
+      uint8_t val = i[j];
 
       // Flush linefeeds if we find a live cell
       if (val && eol_count > 0) {
@@ -1384,14 +1420,11 @@ std::string GetRLE(const std::vector<std::vector<bool>> &life2d) {
       }
 
       // Flush current run if val changes
-      if (val == !last_val) {
+      if (val != last_val) {
         if (run_count > 1)
           result << run_count;
 
-        if (last_val == 1)
-          result << "o";
-        else
-          result << "b";
+        result << symbol(last_val);
 
         run_count = 0;
       }
@@ -1405,7 +1438,7 @@ std::string GetRLE(const std::vector<std::vector<bool>> &life2d) {
       if (run_count > 1)
         result << run_count;
 
-      result << "o";
+      result << symbol(last_val);
 
       run_count = 0;
     }
@@ -1439,6 +1472,8 @@ public:
   // std::vector<int> params;
   unsigned maxGenSurvive;
   unsigned firstGenSurvive;
+  // Cells where the goal (filter / match pattern) was found, at the generation it was found.
+  LifeState goal;
 
   SearchResult(LifeState &initState, const Configuration &conf,
                unsigned firstGenSurviveIn, unsigned genSurvive) {
@@ -1525,7 +1560,11 @@ public:
   // they run (not just their starting cells), plus `gap` empty cells. That keeps
   // the results aligned and lets the output be run in Golly without
   // neighbouring results colliding (escaping spaceships excepted).
-  std::string RLE(int maxCatSize, int gap) {
+  // With `historyPat` the row is drawn in LifeHistory states: catalysts state 1
+  // (green), the starting pattern `historyPat` state 3 (white, leaves red
+  // state-4 cells where it dies), and the cells where the goal was found
+  // state 4 (red) if they start dead.
+  std::string RLE(int maxCatSize, int gap, const LifeState *historyPat = nullptr) {
     unsigned howmany = results.size();
 
     if (maxCatSize != -1)
@@ -1533,12 +1572,12 @@ public:
 
     LifeState envelope;
     for (unsigned l = 0; l < howmany; l++)
-      envelope |= results[l].extent;
+      envelope |= historyPat ? results[l].extent | results[l].goal : results[l].extent;
 
     int minI = N, maxI = -1, minJ = N, maxJ = -1;
     for (int j = 0; j < N; j++)
       for (int i = 0; i < N; i++)
-        if (envelope.GetCell(i - 32, j - 32) == 1) {
+        if (envelope.GetCell(i - N / 2, j - N / 2) == 1) {
           minI = std::min(minI, i);
           maxI = std::max(maxI, i);
           minJ = std::min(minJ, j);
@@ -1557,14 +1596,23 @@ public:
     unsigned width = Dist * howmany;
     unsigned height = frameH + gap;
 
-    std::vector<std::vector<bool>> vec(width, std::vector<bool>(height));
+    std::vector<std::vector<uint8_t>> vec(width, std::vector<uint8_t>(height));
 
     for (unsigned l = 0; l < howmany; l++)
       for (int j = minJ; j <= maxJ; j++)
-        for (int i = minI; i <= maxI; i++)
-          vec[Dist * l + (i - minI)][j - minJ] = results[l].init.GetCell(i - 32, j - 32) == 1;
+        for (int i = minI; i <= maxI; i++) {
+          const int x = i - N / 2, y = j - N / 2;
+          uint8_t v = results[l].init.GetCell(x, y);
+          if (historyPat) {
+            if (v)
+              v = historyPat->GetCell(x, y) ? 3 : 1;
+            else if (results[l].goal.GetCell(x, y))
+              v = 4;
+          }
+          vec[Dist * l + (i - minI)][j - minJ] = v;
+        }
 
-    return GetRLE(vec);
+    return GetRLE(vec, historyPat != nullptr);
   }
 };
 
@@ -1617,7 +1665,7 @@ public:
   bool Add(LifeState &init, const LifeState &afterCatalyst,
            const LifeState &catalysts, const Configuration &conf,
            unsigned firstGenSurvive,
-           unsigned genSurvive) {
+           unsigned genSurvive, const LifeState &goal = LifeState()) {
     if (dedupEnabled) {
       if (IsDuplicate(init)) {
         duplicatesDropped++;
@@ -1648,6 +1696,7 @@ public:
       if (category->BelongsTo(result, hash)) {
           SearchResult r(init, conf, firstGenSurvive, genSurvive);
           r.extent = extent;
+          r.goal = goal;
           category->Add(r);
           return true;
       }
@@ -1658,6 +1707,7 @@ public:
 
     SearchResult r(init, conf, firstGenSurvive, genSurvive);
     r.extent = extent;
+    r.goal = goal;
     categories.push_back(new Category(categoryKey, r, catDelta, maxgen));
     return true;
   }
@@ -1672,10 +1722,10 @@ public:
       category->Print();
   }
 
-  std::string CategoriesRLE(int maxCatSize, int gap) {
+  std::string CategoriesRLE(int maxCatSize, int gap, const LifeState *historyPat = nullptr) {
     std::stringstream ss;
     for (auto & category: categories) {
-      ss << category->RLE(maxCatSize, gap);
+      ss << category->RLE(maxCatSize, gap, historyPat);
     }
     ss << "!";
 
@@ -1694,7 +1744,7 @@ public:
       int minI = N, maxI = -1, minJ = N, maxJ = -1;
       for (int j = 0; j < N; j++)
         for (int i = 0; i < N; i++)
-          if (categories[k]->results[0].init.GetCell(i - 32, j - 32)) {
+          if (categories[k]->results[0].init.GetCell(i - N / 2, j - N / 2)) {
             minI = std::min(minI, i); maxI = std::max(maxI, i);
             minJ = std::min(minJ, j); maxJ = std::max(maxJ, j);
           }
@@ -1704,12 +1754,12 @@ public:
     }
     side += gap;
     unsigned rows = n ? (n + cols - 1) / cols : 1;
-    std::vector<std::vector<bool>> vec(side * cols, std::vector<bool>(side * rows));
+    std::vector<std::vector<uint8_t>> vec(side * cols, std::vector<uint8_t>(side * rows));
     for (unsigned k = 0; k < n; k++)
       for (int j = box[k][2]; j <= box[k][3]; j++)
         for (int i = box[k][0]; i <= box[k][1]; i++)
           vec[side * (k % cols) + (i - box[k][0])][side * (k / cols) + (j - box[k][2])] =
-              categories[k]->results[0].init.GetCell(i - 32, j - 32) == 1;
+              categories[k]->results[0].init.GetCell(i - N / 2, j - N / 2);
     return GetRLE(vec) + "!";
   }
 };
@@ -1787,7 +1837,7 @@ public:
   uint64_t AllCatalystsHash() const {
     std::stringstream ss;
     // (only the exact pair-skipping conditions used in LoadMasks matter, not num-catalyst itself)
-    ss << RuleTableKey() << "|skipMust" << (params.numCatalysts == 2 && hasMustInclude)
+    ss << RuleTableKey() << (N == 64 ? "" : "|torus" + std::to_string(N)) << "|skipMust" << (params.numCatalysts == 2 && hasMustInclude)
        << "|skipTransp" << (params.numTransparent == 1);
     for (auto &cat : catalysts)
       ss << "|" << StateKey(cat.state) << "," << cat.period << "," << cat.mustInclude << "," << cat.transparent;
@@ -1810,7 +1860,7 @@ public:
     if (infile.good()) {
       for (unsigned s = 0; s < catalysts.size(); s++) {
         for (unsigned t = 0; t < catalysts.size(); t++) {
-          infile.read((char*)catalystCollisionMasks[s * catalysts.size() + t].state, N * sizeof(uint64_t));
+          infile.read((char*)catalystCollisionMasks[s * catalysts.size() + t].state, N * sizeof(row_t));
           catalystCollisionMasks[s * catalysts.size() + t].RecalculateMinMax();
         }
       }
@@ -1839,13 +1889,13 @@ public:
     }
 
     // Save the pack for next time (atomically, see WriteCacheAtomically)
-    std::vector<uint64_t> buffer;
+    std::vector<row_t> buffer;
     buffer.reserve(catalysts.size() * catalysts.size() * N);
     for (unsigned s = 0; s < catalysts.size(); s++)
       for (unsigned t = 0; t < catalysts.size(); t++)
         buffer.insert(buffer.end(), catalystCollisionMasks[s * catalysts.size() + t].state,
                       catalystCollisionMasks[s * catalysts.size() + t].state + N);
-    WriteCacheAtomically(fname, (const char *)buffer.data(), buffer.size() * sizeof(uint64_t));
+    WriteCacheAtomically(fname, (const char *)buffer.data(), buffer.size() * sizeof(row_t));
   }
 
   void Init(const char *inputFile) {
@@ -2005,6 +2055,18 @@ public:
                          categoryContainer->CategoriesRLE(params.maxCatSize, params.outputGap));
       std::cout << "Done!" << std::endl;
 
+      if (hasFilter) {
+        // Same layout as the output, in LifeHistory states (see Category::RLE)
+        LifeState startPattern;
+        startPattern.JoinWSymChain(pat, params.symmetryChain);
+        SaveTextAtomically(HistoryFileName(),
+                           RleHeaderComments(categoryContainer->categories.size(), found, false) +
+                           "#C History version: white = starting pattern (turns red where it dies), "
+                           "red = where the goal was found, green = catalysts.\n" +
+                           "x = 0, y = 0, rule = " + HistoryRuleForHeader() + "\n" +
+                           categoryContainer->CategoriesRLE(params.maxCatSize, params.outputGap, &startPattern));
+      }
+
       SaveTextAtomically(UniqueFileName(),
                          "#C CatForce: one square per distinct outcome (" +
                          std::to_string(categoryContainer->categories.size()) + ")\n" +
@@ -2034,6 +2096,13 @@ public:
     }
   }
 
+  std::string HistoryFileName() const { return AddSuffix(params.outputFile, "_history"); }
+
+  // Golly's [rule]History form of the current rule
+  static std::string HistoryRuleForHeader() {
+    return (RuleIsIsotropic() ? CurrentRuleCanonical() : currentRuleName) + "History";
+  }
+
   std::string UniqueFileName() const {
     return params.uniqueFile.empty() ? AddSuffix(params.outputFile, "_unique") : params.uniqueFile;
   }
@@ -2047,6 +2116,8 @@ public:
        << " catalyst(s), max-gen " << params.maxGen;
     if (params.numParts > 1)
       ss << ", part " << (params.partIndex + 1) << "/" << params.numParts;
+    if (N != 64)
+      ss << ", torus " << N << "x" << N;
     ss << (searchFinished ? "" : " (search still running when saved)") << "\n";
     if (!params.outputList.empty())
       ss << "#C catalyst positions for every solution: " << params.outputList << "\n";
@@ -2107,7 +2178,10 @@ public:
     return false;
   }
 
-  bool ValidateFilters(Configuration &conf, unsigned successtime, unsigned failuretime) {
+  // If `goalCells` is given, it receives the cells where each passed filter's
+  // pattern was found (at the generation it was found).
+  bool ValidateFilters(Configuration &conf, unsigned successtime, unsigned failuretime,
+                       LifeState *goalCells = nullptr) {
     LifeState workspace = conf.startingCatalysts;
     workspace.JoinWSymChain(pat, params.symmetryChain);
 
@@ -2140,12 +2214,14 @@ public:
 
         bool succeeded = false;
         LifeState junk;
+        LifeState foundCells;
 
         // See whether there is a match at all
         if (shouldCheck && (params.filterType[k] == ANDFILTER ||
                             params.filterType[k] == ORFILTER)) {
           succeeded = workspace.Contains(targetFilter[k]);
           junk = workspace & ~targetFilter[k].wanted & ~catalystState;
+          foundCells = targetFilter[k].wanted;
         }
 
         if (shouldCheck && (params.filterType[k] == MATCHFILTER)) {
@@ -2157,7 +2233,8 @@ public:
               LifeState matches = withoutCatalysts.Match(transformed);
               if(!matches.IsEmpty()) {
                 succeeded = true;
-                junk = withoutCatalysts & ~matches.Convolve(transformed.wanted);
+                foundCells = matches.Convolve(transformed.wanted) & withoutCatalysts;
+                junk = withoutCatalysts & ~foundCells;
                 break;
               }
             }
@@ -2166,6 +2243,8 @@ public:
 
         if (succeeded && (params.maxJunk == -1 || junk.GetPop() <= params.maxJunk)) {
           filterPassed[k] = true;
+          if (goalCells)
+            *goalCells |= foundCells;
 
           // If this was an OR filter, consider all the other OR filters passed
           // too.
@@ -2264,8 +2343,8 @@ public:
       // one live cell of the pattern, used to find the shift that lines a
       // transformed copy up with the original
       int rx = 99, ry = 99;
-      for (int x = -32; x < 32 && rx == 99; x++)
-        for (int y = -32; y < 32; y++)
+      for (int x = -N / 2; x < N / 2 && rx == 99; x++)
+        for (int y = -N / 2; y < N / 2; y++)
           if (fullPat.GetCell(x, y) == 1) { rx = x; ry = y; break; }
 
       const SymmetryTransform d4[] = {ReflectAcrossX, ReflectAcrossY, Rotate90, Rotate270,
@@ -2274,8 +2353,8 @@ public:
         LifeState tp = fullPat;
         tp.Transform(t);
         bool found = false;
-        for (int x = -32; x < 32 && !found; x++)
-          for (int y = -32; y < 32 && !found; y++) {
+        for (int x = -N / 2; x < N / 2 && !found; x++)
+          for (int y = -N / 2; y < N / 2 && !found; y++) {
             if (tp.GetCell(x, y) != 1)
               continue;
             int dx = rx - x, dy = ry - y;
@@ -2335,8 +2414,9 @@ public:
     }
 
     // If has filter validate them;
+    LifeState goal;
     if (hasFilter) {
-      if (!ValidateFilters(conf, successtime, failuretime))
+      if (!ValidateFilters(conf, successtime, failuretime, &goal))
         return;
     }
 
@@ -2357,7 +2437,7 @@ public:
 
     std::lock_guard<std::mutex> lk(mtx);
     if (categoryContainer->Add(init, afterCatalyst, steppedCatalysts, conf,
-                               successtime - params.stableInterval + 2, 0)) {
+                               successtime - params.stableInterval + 2, 0, goal)) {
       found++;
       solutionLines.push_back(description);
 
@@ -2391,6 +2471,122 @@ public:
          << " top-left (" << x0 << "," << y0 << ")";
     }
     return ss.str();
+  }
+
+  // ---- escaped spaceships (spaceship-cutoff) ----
+  // Index just after the longest circular run of unset bits (the "left edge" of a
+  // compact set of rows/columns on the torus), or -1 if all/none are set.
+  static int CircularLeftEdge(row_t occupied) {
+    if (occupied == 0 || occupied == ROW_ALL)
+      return -1;
+    int start = RowCtz(occupied), best = -1, bestLen = -1, run = 0;
+    for (int k = 1; k <= N; k++) {
+      int i = (start + k) % N;
+      if (!((occupied >> i) & 1)) {
+        run++;
+      } else {
+        if (run > bestLen) { bestLen = run; best = i; }
+        run = 0;
+      }
+    }
+    return best;
+  }
+
+  // Moves a small object so its bounding box starts at (0, 0); same shape at a
+  // different place gives the same result. False if it is not compact.
+  static bool Normalise(LifeState &st) {
+    row_t rows = 0;
+    for (int i = 0; i < N; i++)
+      rows |= st.state[i];
+    int cx = CircularLeftEdge(NonEmptyColumns(st.state)), cy = CircularLeftEdge(rows);
+    if (cx < 0 || cy < 0)
+      return false;
+    st.Move(-cx, -cy);
+    st.gen = 0;
+    return true;
+  }
+
+  // True if `obj`, evolved on its own, comes back as a moved copy of itself
+  // within 32 generations. Results are cached per thread by shape.
+  static bool IsSpaceship(const LifeState &obj) {
+    LifeState key = obj;
+    if (!Normalise(key))
+      return false;
+    static thread_local std::unordered_map<uint64_t, std::vector<std::pair<LifeState, bool>>> cache;
+    uint64_t h = key.GetHash();
+    auto &bucket = cache[h];
+    for (const auto &e : bucket)
+      if (e.first == key)
+        return e.second;
+
+    bool ship = false;
+    const unsigned pop = obj.GetPop();
+    LifeState cur = obj;
+    for (int p = 1; p <= 32; p++) {
+      cur.Step();
+      unsigned cp = cur.GetPop();
+      if (cp == 0 || cp > 4 * pop + 16)
+        break;
+      if (cp != pop)
+        continue;
+      LifeState n = cur;
+      if (Normalise(n) && n == key) {
+        ship = !(cur == obj); // same place: an oscillator, not a spaceship
+        break;
+      }
+    }
+    if (cache.size() > 100000)
+      cache.clear();
+    cache[h].emplace_back(key, ship);
+    return ship;
+  }
+
+  // Cells within Chebyshev distance d of `st` (a (2d+1)x(2d+1) square around
+  // each cell), in O(log d) shift rounds.
+  static LifeState Dilate(const LifeState &st, int d) {
+    LifeState a = st, b;
+    for (int r = 0; r < d;) {
+      int sh = std::min(2 * r + 1, d) - r; // radius r -> r + sh
+      for (int i = 0; i < N; i++)
+        b.state[i] = a.state[i] | RotateLeft(a.state[i], sh) | RotateRight(a.state[i], sh);
+      for (int i = 0; i < N; i++)
+        a.state[i] = b.state[i] | b.state[(i + sh) % N] | b.state[(i + N - sh) % N];
+      r += sh;
+    }
+    a.RecalculateMinMax();
+    return a;
+  }
+
+  // Cells of `active` (the non-catalyst cells) that belong to spaceships more
+  // than `cutoff` cells away from all other active cells, provided something
+  // other than those spaceships is left (the reaction or its debris).
+  // `changing` = cells that differ in the next generation; only clusters that
+  // contain some are looked at, since a still life is never a spaceship.
+  static LifeState FarSpaceships(const LifeState &active, const LifeState &changing, int cutoff) {
+    const unsigned maxShipPop = 150; // bigger clusters are taken to be the reaction
+    LifeState far, seeds = changing & active;
+    for (int tries = 0; tries < 8 && !seeds.IsEmpty(); tries++) {
+      std::pair<int, int> c = seeds.FirstOn();
+      LifeState comp;
+      comp.Set(c.first, c.second);
+      bool small = true;
+      while (true) {
+        LifeState grown = Dilate(comp, cutoff) & active;
+        if (grown == comp)
+          break;
+        comp = grown;
+        if (comp.GetPop() > maxShipPop) {
+          small = false;
+          break;
+        }
+      }
+      seeds &= ~(small ? comp : Dilate(comp, cutoff));
+      if (small && IsSpaceship(comp))
+        far |= comp;
+    }
+    if (far.IsEmpty() || (active & ~far).IsEmpty())
+      return LifeState();
+    return far;
   }
 
   // Union of all search-area rectangles (default rectangle if none were
@@ -2470,6 +2666,8 @@ public:
     BoundingBoxRle(pat, x0, y0, w, h);
     std::cout << "Summary" << std::endl
               << "  rule:          " << RuleDescription() << std::endl
+              << "  torus:         " << N << "x" << N << std::endl
+              << "  spaceships:    " << (params.spaceshipCutoff > 0 ? "no catalysts for spaceships more than " + std::to_string(params.spaceshipCutoff) + " cells from the reaction" : "no cutoff") << std::endl
               << "  pattern:       " << pat.GetPop() << " cells, " << w << "x" << h << " box at (" << x0 << "," << y0 << ")" << std::endl
               << "  symmetry:      " << params.symmetryName << std::endl
               << "  baits:         " << params.baits.size() << std::endl
@@ -2616,6 +2814,19 @@ public:
 
         LifeState activePart = (~history).ZOI() & config.state & ~config.catalystsState;
 
+        // Escaped spaceships far from the reaction: no catalyst may be placed for
+        // them, and the places they pass are blocked (a catalyst there would have
+        // been hit by them).
+        if (params.spaceshipCutoff > 0 && !activePart.IsEmpty()) {
+          LifeState ships = FarSpaceships(config.state & ~config.catalystsState, config.state ^ next,
+                                          params.spaceshipCutoff);
+          if (!ships.IsEmpty()) {
+            for (unsigned s = 0; s < catalysts.size(); s++)
+              masks[s] |= ships.Convolve(catalysts[s].reactionMask | catalysts[s].phaseReactionMask[g % catalysts[s].period]);
+            activePart &= ~ships;
+          }
+        }
+
           if(!activePart.IsEmpty()) {
           for (unsigned s = 0; s < catalysts.size(); s++) {
             if(catalysts[s].hasLocus) {
@@ -2663,16 +2874,16 @@ public:
               // the catalyst, so only those columns are stepped (not the whole board).
               LifeState testState = config.state;
               testState |= symCatalyst;
-              const uint64_t catCols = NonEmptyColumns(symCatalyst.state);
-              const uint64_t nearCols = catCols | RotateLeft(catCols) | RotateRight(catCols);
+              const row_t catCols = NonEmptyColumns(symCatalyst.state);
+              const row_t nearCols = catCols | RotateLeft(catCols) | RotateRight(catCols);
               {
-                uint64_t withCat[N], catAlone[N];
+                row_t withCat[N], catAlone[N];
                 testState.StepColumnsInto(nearCols, withCat);
                 symCatalyst.StepColumnsInto(nearCols, catAlone);
 
                 bool interacts = false;
-                for (uint64_t bits = nearCols; bits; bits &= bits - 1) {
-                  int i = __builtin_ctzll(bits);
+                for (row_t bits = nearCols; bits; bits &= bits - 1) {
+                  int i = RowCtz(bits);
                   if (((next.state[i] | catAlone[i]) ^ withCat[i]) != 0) {
                     interacts = true;
                     break;
@@ -2734,11 +2945,11 @@ public:
 
               newConfig.catalystsStill = false;
               if (config.catalystsStill) {
-                uint64_t out[N];
+                row_t out[N];
                 newConfig.catalystsState.StepColumnsInto(nearCols, out);
                 bool still = true;
-                for (uint64_t bits = nearCols; bits; bits &= bits - 1) {
-                  int i = __builtin_ctzll(bits);
+                for (row_t bits = nearCols; bits; bits &= bits - 1) {
+                  int i = RowCtz(bits);
                   if (out[i] != newConfig.catalystsState.state[i]) {
                     still = false;
                     break;
@@ -3067,6 +3278,42 @@ static void CompileRuleAndRestart(int argc, char *argv[]) {
   Die("--compile-rule: rebuilt, but could not restart the program; just run it again.");
 }
 
+// "torus <size>" in the input file: if this binary was built for another size,
+// build (if needed) and run the one for that size (CatForce / CatForce128)
+// with the same arguments. Returns if this binary already fits.
+static void SwitchTorusIfNeeded(int argc, char *argv[]) {
+  int want = N;
+  for (const std::string &line : ReadInputLines(argv[1])) {
+    std::vector<std::string> elems = splitwhitespace(line);
+    if (elems.size() >= 2 && elems[0] == "torus")
+      want = ParseIntOrDie(elems[1], "torus", 1);
+  }
+  if (want == N)
+    return;
+  if (want != 64 && want != 128)
+    Die("torus: " + std::to_string(want) + " is not supported (use 64 or 128)");
+  const std::string dir = DirOf(argv[0]);
+  const std::string name = want == 64 ? "CatForce" : "CatForce" + std::to_string(want);
+  const std::string exe = dir + "/" + name;
+  if (FileExists(dir + "/Makefile") && FileExists(dir + "/CatForce.cpp")) {
+    if (!FileExists(exe))
+      std::cout << "torus " << want << ": building " << exe << " (first use only)..." << std::endl;
+    const char *makeCmd = getenv("CATFORCE_MAKE");
+    std::string cmd = std::string(makeCmd ? makeCmd : "make") + " -s -C '" + dir + "' " + name;
+    if (system(cmd.c_str()) != 0 && !FileExists(exe))
+      Die("torus " + std::to_string(want) + ": building " + name + " failed (\"" + cmd + "\")");
+  } else if (!FileExists(exe)) {
+    Die("torus " + std::to_string(want) + " needs " + name + " next to this program (build it with: make " + name + ")");
+  }
+  std::cout << "torus " << want << ": running " << exe << std::endl;
+  std::vector<char *> args(argv, argv + argc);
+  std::string exeArg = exe;
+  args[0] = &exeArg[0];
+  args.push_back(nullptr);
+  execv(exe.c_str(), args.data());
+  Die("torus " + std::to_string(want) + ": could not start " + exe);
+}
+
 int main(int argc, char *argv[]) {
   if (argc < 2 || std::string(argv[1]) == "--help" || std::string(argv[1]) == "-h") {
     std::cout << "Usage: CatForce <in file> [--check] [--threads N] [--max-time N[s|m|h]] [--max-results N] [--part K/N] [--verbose]" << std::endl
@@ -3117,6 +3364,7 @@ int main(int argc, char *argv[]) {
   if (compileRule) {
     CompileRuleAndRestart(argc, argv); // only returns when there is nothing to compile
   }
+  SwitchTorusIfNeeded(argc, argv);
 
   std::cout << "Input: " << argv[1] << std::endl
             << "Initializing please wait..." << std::endl;

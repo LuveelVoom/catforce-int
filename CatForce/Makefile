@@ -14,9 +14,14 @@ else
 	INSTRUMENTFLAGS =
 endif
 
-all: CatForce
+# CatForce128 (128x128 torus, "torus 128" in the .in file) is built on first
+# use; once it exists, plain `make` keeps it up to date too.
+all: CatForce $(if $(wildcard CatForce128),CatForce128)
 CatForce: CatForce.cpp LifeAPI.h RuleCompiler.h $(wildcard rule_kernels.h)
 	$(CC) $(CFLAGS) $(INSTRUMENTFLAGS) -o CatForce CatForce.cpp $(LDFLAGS)
+
+CatForce128: CatForce.cpp LifeAPI.h RuleCompiler.h $(wildcard rule_kernels.h)
+	$(CC) $(CFLAGS) -DCATFORCE_N=128 -o CatForce128 CatForce.cpp $(LDFLAGS)
 
 instrument: CatForce.cpp LifeAPI.h
 	$(CC) $(CFLAGS) -fprofile-instr-generate=instrumenting/pass1.profraw -o instrumenting/pass1-CatForce CatForce.cpp

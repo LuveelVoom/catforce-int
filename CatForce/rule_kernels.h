@@ -6,8 +6,8 @@
 
 // rule B3ainj4cw5cek6n/S2-in3-ky4enyjtw5injr6cen7c: 195 operations after the neighbour count
 template <class T> static inline T RuleKernel0(T L, T C, T R) {
-  const T n7 = (L << 1) | (L >> 63), n6 = (C << 1) | (C >> 63), n5 = (R << 1) | (R >> 63), n4 = L, n3 = R;
-  const T n2 = (L >> 1) | (L << 63), n1 = (C >> 1) | (C << 63), n0 = (R >> 1) | (R << 63);
+  const T n7 = (L << 1) | (L >> RK_TOP), n6 = (C << 1) | (C >> RK_TOP), n5 = (R << 1) | (R >> RK_TOP), n4 = L, n3 = R;
+  const T n2 = (L >> 1) | (L << RK_TOP), n1 = (C >> 1) | (C << RK_TOP), n0 = (R >> 1) | (R << RK_TOP);
   const T a1 = n0 ^ n1, c1 = n0 & n1, a2 = n2 ^ n3, c2 = n2 & n3, a3 = n4 ^ n5, c3 = n4 & n5, a4 = n6 ^ n7, c4 = n6 & n7;
   const T x0 = a1 ^ a2, y0 = a1 & a2, x1 = a3 ^ a4, y1 = a3 & a4;
   const T b0 = x0 ^ x1, z = x0 & x1;
@@ -217,8 +217,8 @@ template <class T> static inline T RuleKernel0(T L, T C, T R) {
 
 // rule B3/S23-q4i: 39 operations after the neighbour count
 template <class T> static inline T RuleKernel1(T L, T C, T R) {
-  const T n7 = (L << 1) | (L >> 63), n6 = (C << 1) | (C >> 63), n5 = (R << 1) | (R >> 63), n4 = L, n3 = R;
-  const T n2 = (L >> 1) | (L << 63), n1 = (C >> 1) | (C << 63), n0 = (R >> 1) | (R << 63);
+  const T n7 = (L << 1) | (L >> RK_TOP), n6 = (C << 1) | (C >> RK_TOP), n5 = (R << 1) | (R >> RK_TOP), n4 = L, n3 = R;
+  const T n2 = (L >> 1) | (L << RK_TOP), n1 = (C >> 1) | (C << RK_TOP), n0 = (R >> 1) | (R << RK_TOP);
   const T a1 = n0 ^ n1, c1 = n0 & n1, a2 = n2 ^ n3, c2 = n2 & n3, a3 = n4 ^ n5, c3 = n4 & n5, a4 = n6 ^ n7, c4 = n6 & n7;
   const T x0 = a1 ^ a2, y0 = a1 & a2, x1 = a3 ^ a4, y1 = a3 & a4;
   const T b0 = x0 ^ x1, z = x0 & x1;
