@@ -53,7 +53,9 @@ enum FilterType {
 class SearchParams {
 public:
   unsigned maxGen;
-  unsigned numCatalysts;
+  unsigned numCatalysts;      // the most catalysts per result (num-catalyst N or M-N)
+  unsigned minCatalysts = 0;  // the fewest (0 = same as numCatalysts)
+  std::string sortBy = "found"; // output order, see SortResults
   unsigned numTransparent;
   unsigned stableInterval;
   std::string pat;
@@ -270,6 +272,9 @@ public:
   bool sacrificial;
   unsigned period;
   bool isBlinker;
+  unsigned maxUses = 0;  // at most this many per result (0 = no limit)
+  std::vector<std::string> zoneRLE;            // this catalyst must lie inside these cells
+  std::vector<std::pair<int, int>> zoneXY;
 
   explicit CatalystInput(std::string &line) {
     std::vector<std::string> elems = splitwhitespace(line);
@@ -349,6 +354,16 @@ public:
       } else if (elems[argi] == "isblinker") {
         isBlinker = true;
         argi += 1;
+      } else if (elems[argi] == "max-uses") {
+        needTokens(1);
+        maxUses = ParseIntOrDie(elems[argi + 1], "cat max-uses", 1);
+        argi += 2;
+      } else if (elems[argi] == "zone") {
+        needTokens(3);
+        CheckRle(elems[argi + 1], "cat zone");
+        zoneRLE.push_back(elems[argi + 1]);
+        zoneXY.emplace_back(ParseIntOrDie(elems[argi + 2], "cat zone x"), ParseIntOrDie(elems[argi + 3], "cat zone y"));
+        argi += 4;
       } else if (elems[argi] == "period") {
         needTokens(1);
         period = ParseIntOrDie(elems[argi + 1], "cat period", 1); // 0 would divide by zero later
@@ -612,7 +627,7 @@ static const char *const kKeywords[] = {
     "symmetry", "also-required", "stop-after-cats-destroyed", "max-junk", "keep-duplicates",
     "keep-interacting", "output-gap", "bait", "threads", "max-time", "max-results", "output-list",
     "verbose", "part", "unique-output", "lightcone", "lightcone-tight", "resume-from", "contact-filter", "split-level",
-    "spaceship-cutoff", "torus", "fixed-cat", "catalyst-zone", "no-catalyst-zone", "keep-empty", "torus-edge",
+    "spaceship-cutoff", "torus", "fixed-cat", "catalyst-zone", "no-catalyst-zone", "keep-empty", "torus-edge", "sort-by",
     "layout", "legend"};
 
 static bool IsKnownKeyword(const std::string &w) {
@@ -1156,7 +1171,18 @@ void ReadParams(const std::string& fname, std::vector<CatalystInput> &catalysts,
 
     if (elems[0] == numCat) {
       // The search keeps per-catalyst state in fixed arrays of MAX_CATALYSTS entries.
-      params.numCatalysts = ParseIntOrDie(elems[1], "num-catalyst", 1);
+      // "num-catalyst 1-3": every result with 1 to 3 catalysts.
+      std::vector<std::string> range;
+      split(elems[1], '-', range);
+      if (range.size() == 2) {
+        params.minCatalysts = ParseIntOrDie(range[0], "num-catalyst (fewest)", 1);
+        params.numCatalysts = ParseIntOrDie(range[1], "num-catalyst (most)", 1);
+        if (params.minCatalysts > params.numCatalysts)
+          Die("num-catalyst " + elems[1] + ": the first number must not be larger than the second");
+      } else {
+        params.numCatalysts = ParseIntOrDie(elems[1], "num-catalyst", 1);
+        params.minCatalysts = params.numCatalysts;
+      }
       if (params.numCatalysts > (unsigned)MAX_SEARCHED)
         Die("num-catalyst " + elems[1] + " is not supported (maximum " + std::to_string(MAX_SEARCHED) + ")");
     }
@@ -1367,6 +1393,14 @@ void ReadParams(const std::string& fname, std::vector<CatalystInput> &catalysts,
                                                                                          : params.noCatalystZones).push_back(r);
       }
     }
+    if (elems[0] == "sort-by") {
+      std::vector<std::string> keys;
+      split(elems[1], ',', keys);
+      for (const std::string &k : keys)
+        if (k != "found" && k != "recovery" && k != "cells" && k != "catalysts" && k != "junk" && k != "frequency")
+          Die("sort-by: unknown key \"" + k + "\" (use found, recovery, cells, catalysts, junk, frequency; several separated by commas)");
+      params.sortBy = elems[1];
+    }
     if (elems[0] == "torus-edge") {
       params.torusEdge = elems[1];
       if (elems[1] != "flag" && elems[1] != "drop" && elems[1] != "off")
@@ -1431,6 +1465,8 @@ void ReadParams(const std::string& fname, std::vector<CatalystInput> &catalysts,
 
   if(!hasLastGen)
     params.lastGen = params.maxGen - 1;
+  if (params.minCatalysts == 0)
+    params.minCatalysts = params.numCatalysts;
   for (auto &r : params.filterGenRange)
     if (r.second == (int)kFilterMaxGen)
       r.second = (int)params.maxGen - 1;
@@ -1575,6 +1611,8 @@ public:
   int inputIndex = -1;   // which cat line (0-based) it came from
   int orient = 0;        // which orientation of that line
   bool fixed = false;    // a fixed-cat: already placed, never searched for
+  unsigned maxUses = 0;  // cat option max-uses (0 = no limit)
+  LifeState zone;        // cat option zone: must lie inside these cells (empty = anywhere)
 
   static std::vector<CatalystData> FromInput(CatalystInput &input);
 };
@@ -1686,6 +1724,9 @@ std::vector<CatalystData> CatalystData::FromInput(CatalystInput &input) {
       }
 
       result.transparent = input.transparent;
+      result.maxUses = input.maxUses;
+      for (size_t z = 0; z < input.zoneRLE.size(); z++)
+        result.zone |= LifeState::Parse(input.zoneRLE[z].c_str(), input.zoneXY[z].first, input.zoneXY[z].second);
       result.period = input.period;
       result.mustInclude = input.mustInclude;
       result.checkRecovery = input.checkRecovery;
@@ -1976,8 +2017,19 @@ std::string GetRLE(const std::vector<std::vector<uint8_t>> &life2d, bool multiSt
   return result.str();
 }
 
+// What the output needs to know about a solution besides its cells.
+struct SolutionInfo {
+  LifeState cats;          // the catalysts at generation 0 (with symmetric images)
+  std::string desc;        // the output-list line
+  std::vector<int> usage;  // cat lines used (0-based input indices)
+  unsigned catCount = 0;   // catalysts in it (fixed ones included)
+  bool edge = false;       // its reaction reaches the torus edge
+};
+
 class SearchResult {
 public:
+  SolutionInfo info;
+  unsigned junk = 0;       // non-catalyst cells of the outcome at the end
   // Saved for the report
   LifeState init;
   // Every cell the result touches while it runs (init through the container's
@@ -2081,7 +2133,7 @@ public:
   // (green), the starting pattern `historyPat` state 3 (white, leaves red
   // state-4 cells where it dies), and the cells where the goal was found
   // state 4 (red) if they start dead.
-  std::string RLE(int maxCatSize, int gap, const LifeState *historyPat = nullptr) {
+  std::string RLE(int maxCatSize, int gap, const LifeState *historyPat = nullptr, unsigned *rowHeight = nullptr) {
     unsigned howmany = results.size();
 
     if (maxCatSize != -1)
@@ -2112,6 +2164,8 @@ public:
 
     unsigned width = Dist * howmany;
     unsigned height = frameH + gap;
+    if (rowHeight)
+      *rowHeight = height;
 
     std::vector<std::vector<uint8_t>> vec(width, std::vector<uint8_t>(height));
 
@@ -2192,7 +2246,8 @@ public:
   bool Add(LifeState &init, const LifeState &afterCatalyst,
            const LifeState &catalysts, const Configuration &conf,
            unsigned firstGenSurvive,
-           unsigned genSurvive, const LifeState &goal = LifeState(), const LifeState *knownExtent = nullptr) {
+           unsigned genSurvive, const LifeState &goal = LifeState(), const LifeState *knownExtent = nullptr,
+           const SolutionInfo &info = SolutionInfo()) {
     if (dedupEnabled) {
       if (IsDuplicate(init)) {
         duplicatesDropped++;
@@ -2208,6 +2263,7 @@ public:
 
     result.Step(maxgen - result.gen);
     uint64_t hash = result.GetHash();
+    const unsigned junk = result.GetPop();
 
     result = afterCatalyst ^ catalysts;
     result.gen = firstGenSurvive;
@@ -2217,6 +2273,8 @@ public:
           SearchResult r(init, conf, firstGenSurvive, genSurvive);
           r.extent = extent;
           r.goal = goal;
+          r.info = info;
+          r.junk = junk;
           category->Add(r);
           return true;
       }
@@ -2228,6 +2286,8 @@ public:
     SearchResult r(init, conf, firstGenSurvive, genSurvive);
     r.extent = extent;
     r.goal = goal;
+    r.info = info;
+    r.junk = junk;
     categories.push_back(new Category(categoryKey, r, catDelta, maxgen));
     return true;
   }
@@ -2237,16 +2297,94 @@ public:
       category->Sort();
   }
 
+  // Orders the results inside each row and then the rows, by the comma-separated
+  // keys of sort-by: found (as found), recovery (earliest first), cells (fewest
+  // catalyst cells), catalysts (fewest catalysts), junk (smallest outcome),
+  // frequency (rows with the most results first).
+  void SortResults(const std::string &spec) {
+    std::vector<std::string> keys;
+    split(spec, ',', keys);
+    if (keys.empty() || (keys.size() == 1 && keys[0] == "found"))
+      return;
+    auto cmpRes = [&](const SearchResult &a, const SearchResult &b) {
+      for (const std::string &k : keys) {
+        long d = 0;
+        if (k == "recovery") d = (long)a.firstGenSurvive - (long)b.firstGenSurvive;
+        else if (k == "cells") d = (long)a.info.cats.GetPop() - (long)b.info.cats.GetPop();
+        else if (k == "catalysts") d = (long)a.info.catCount - (long)b.info.catCount;
+        else if (k == "junk") d = (long)a.junk - (long)b.junk;
+        if (d) return d < 0;
+      }
+      return false;
+    };
+    for (auto &c : categories)
+      std::stable_sort(c->results.begin(), c->results.end(), cmpRes);
+    std::stable_sort(categories.begin(), categories.end(), [&](const Category *a, const Category *b) {
+      for (const std::string &k : keys) {
+        if (k == "frequency" && a->results.size() != b->results.size())
+          return a->results.size() > b->results.size();
+        if (k != "frequency" && k != "found") {
+          if (cmpRes(a->results[0], b->results[0])) return true;
+          if (cmpRes(b->results[0], a->results[0])) return false;
+        }
+      }
+      return false;
+    });
+  }
+
+  // Machine-readable list of every result, read back by --merge.
+  std::string DataFile(const std::string &header) const {
+    std::stringstream ss;
+    ss << "# CatForce results data 1\n" << header;
+    ss << "# first-gen<TAB>catalysts rle x y<TAB>goal rle x y<TAB>cat lines<TAB>catalysts<TAB>edge<TAB>description\n";
+    for (const Category *c : categories)
+      for (const SearchResult &r : c->results) {
+        int x0, y0, w, h, gx, gy;
+        std::string cats = BoundingBoxRle(r.info.cats, x0, y0, w, h);
+        std::string goal = r.goal.IsEmpty() ? "-" : BoundingBoxRle(r.goal, gx, gy, w, h);
+        ss << r.firstGenSurvive << "\t" << cats << " " << x0 << " " << y0 << "\t";
+        if (r.goal.IsEmpty()) ss << "- 0 0"; else ss << goal << " " << gx << " " << gy;
+        ss << "\t";
+        if (r.info.usage.empty()) ss << "-";
+        for (size_t u = 0; u < r.info.usage.size(); u++) ss << (u ? "," : "") << r.info.usage[u];
+        ss << "\t" << r.info.catCount << "\t" << (r.info.edge ? 1 : 0) << "\t" << r.info.desc << "\n";
+      }
+    return ss.str();
+  }
+
   void Print() {
     for (auto & category: categories)
       category->Print();
   }
 
-  std::string CategoriesRLE(int maxCatSize, int gap, const LifeState *historyPat = nullptr) {
-    std::stringstream ss;
+  // With `summary`, also one "#C row ..." line per row (where it starts and what is in it).
+  std::string CategoriesRLE(int maxCatSize, int gap, const LifeState *historyPat = nullptr,
+                            std::string *summary = nullptr) {
+    std::stringstream ss, sum;
+    unsigned y = 0, k = 0;
     for (auto & category: categories) {
-      ss << category->RLE(maxCatSize, gap, historyPat);
+      unsigned h = 0;
+      ss << category->RLE(maxCatSize, gap, historyPat, &h);
+      if (summary && k < 500) {
+        const SearchResult &r = category->results[0];
+        sum << "#C row " << (k + 1) << " at y = " << y << ": " << category->results.size() << " result"
+            << (category->results.size() > 1 ? "s" : "") << "; first: recovered from gen " << r.firstGenSurvive << ", "
+            << r.info.catCount << " catalyst" << (r.info.catCount == 1 ? "" : "s") << " (" << r.info.cats.GetPop()
+            << " cells), outcome " << r.junk << " cells";
+        if (!r.info.usage.empty()) {
+          sum << ", cat lines";
+          for (size_t u = 0; u < r.info.usage.size(); u++)
+            sum << (u ? "," : " ") << (r.info.usage[u] + 1);
+        }
+        sum << (r.info.edge ? ", reaches the torus edge" : "") << "\n";
+      } else if (summary && k == 500) {
+        sum << "#C (more rows not listed)\n";
+      }
+      y += h;
+      k++;
     }
+    if (summary)
+      *summary = sum.str();
     ss << "!";
 
     return ss.str();
@@ -2457,6 +2595,7 @@ public:
     }
     rootCount = fixedIdx.size();
     totalCats = params.numCatalysts + rootCount;
+    minTotal = params.minCatalysts + rootCount;
     if (totalCats > (unsigned)MAX_CATALYSTS)
       Die("num-catalyst plus fixed-cat lines may be at most " + std::to_string(MAX_CATALYSTS));
 
@@ -2497,7 +2636,8 @@ public:
       targetFilter.push_back(LifeTarget::Parse(params.targetFilter[i].c_str(),
                                                params.filterdx[i], params.filterdy[i]));
 
-    LoadMasks();
+    if (!skipMasks)
+      LoadMasks();
 
     found = 0;
 
@@ -2591,9 +2731,24 @@ public:
     std::cout << ", now: ";
     PrintTime(sec);
     std::cout << std::setfill(' ');
-    if (!searchFinished)
+    if (!searchFinished) {
+      const unsigned long long done = rootPlacementsDone.load();
       std::cout << "  (first catalyst at gen " << progressGen.load() << " of " << params.startGen << ".."
-                << params.lastGen << ", " << rootPlacementsDone.load() << " first placements done)";
+                << params.lastGen << ", " << done;
+      if (totalRoots > 0) {
+        double frac = std::min(1.0, done / (double)totalRoots);
+        std::cout << " of " << totalRoots << " first placements, " << std::fixed << std::setprecision(1) << 100 * frac << "%";
+        double el = ElapsedSeconds() - countSeconds;
+        if (frac >= 0.02 && el >= 10) {
+          std::cout << ", roughly ";
+          PrintTime((unsigned)(el * (1 - frac) / frac));
+          std::cout << std::setfill(' ') << " left";
+        }
+        std::cout << ")";
+      } else {
+        std::cout << " first placements done)";
+      }
+    }
     std::cout << std::endl;
     // std::cout << ", " << std::setprecision(1) << std::fixed << checkPerSecond
     //           << "K/sec" << std::endl;
@@ -2609,10 +2764,16 @@ public:
       lastSavedFullFound = fullfound;
       std::cout << "Saving " << params.outputFile << "... " << std::flush;
 
+      categoryContainer->SortResults(params.sortBy);
+      std::string rows;
+      std::string body = categoryContainer->CategoriesRLE(params.maxCatSize, params.outputGap, nullptr, &rows);
       SaveTextAtomically(params.outputFile,
-                         RleHeaderComments(categoryContainer->categories.size(), found, false) +
-                         "x = 0, y = 0, rule = " + RuleForHeader() + "\n" +
-                         categoryContainer->CategoriesRLE(params.maxCatSize, params.outputGap));
+                         RleHeaderComments(categoryContainer->categories.size(), found, false) + rows +
+                         "x = 0, y = 0, rule = " + RuleForHeader() + "\n" + body);
+      SaveTextAtomically(DataFileName(),
+                         categoryContainer->DataFile("# input " + params.inputFile + " | rule " + RuleForHeader() +
+                                                     " | torus " + std::to_string(N) + " | max-gen " + std::to_string(params.maxGen) +
+                                                     " | finished " + (searchFinished ? "yes" : "no") + "\n"));
       std::cout << "Done!" << std::endl;
 
       if (hasFilter) {
@@ -2657,6 +2818,12 @@ public:
   }
 
   std::string HistoryFileName() const { return AddSuffix(params.outputFile, "_history"); }
+  // results.rle -> results.cfdata (read back by --merge)
+  std::string DataFileName() const {
+    const std::string &o = params.outputFile;
+    size_t slash = o.find_last_of("/\\"), dot = o.find_last_of('.');
+    return (dot == std::string::npos || (slash != std::string::npos && dot < slash) ? o : o.substr(0, dot)) + ".cfdata";
+  }
 
   // Golly's [rule]History form of the current rule
   static std::string HistoryRuleForHeader() {
@@ -2672,8 +2839,11 @@ public:
     std::stringstream ss;
     ss << "#C CatForce " << (full ? "full report (filters ignored)" : "results") << ": " << solutions
        << " solution(s) in " << rows << " row(s), one row per distinct outcome.\n";
-    ss << "#C input: " << params.inputFile << ", rule " << RuleForHeader() << ", " << params.numCatalysts
-       << " catalyst(s), max-gen " << params.maxGen;
+    ss << "#C input: " << params.inputFile << ", rule " << RuleForHeader() << ", "
+       << (params.minCatalysts < params.numCatalysts ? std::to_string(params.minCatalysts) + "-" : std::string())
+       << params.numCatalysts << " catalyst(s), max-gen " << params.maxGen;
+    if (params.sortBy != "found")
+      ss << ", sorted by " << params.sortBy;
     if (params.numParts > 1)
       ss << ", part " << (params.partIndex + 1) << "/" << params.numParts;
     if (N != 64)
@@ -2686,6 +2856,8 @@ public:
 
   // Called from the search roots: prints/saves at most about once a second.
   void MaybeReport() {
+    if (countOnly)
+      return;
     std::lock_guard<std::mutex> lk(mtx);
     auto now = std::chrono::steady_clock::now();
     // every second for the first minute, then every 10 seconds
@@ -2861,6 +3033,12 @@ public:
   // Progress of the top-level loop (first catalyst), shown in the status line.
   std::atomic<unsigned> progressGen{0};
   std::atomic<unsigned long long> rootPlacementsDone{0};
+  unsigned long long totalRoots = 0;     // first placements of this run (from the counting pass)
+  double countSeconds = 0;               // time the counting pass took
+  std::atomic<unsigned long long> countedRoots{0};
+  bool countOnly = false;                // counting pass: count first placements, do not search them
+  unsigned minTotal = 0;                 // rootCount + the fewest catalysts per result
+  bool skipMasks = false;                // --merge: no search, so no collision masks
 
   // A catalyst placed at generation g is first counted as recovered at g (or at
   // the next multiple of its period), and a solution needs it recovered for
@@ -3012,26 +3190,39 @@ public:
         description += " | REACHES THE TORUS EDGE (may wrap around)";
     }
 
-    std::lock_guard<std::mutex> lk(mtx);
-    if (categoryContainer->Add(init, afterCatalyst, steppedCatalysts, conf,
-                               successtime - params.stableInterval + 2, 0, goal, &extent)) {
-      if (edge)
-        edgeFlagged++;
-      found++;
-      solutionLines.push_back(description);
+    SolutionInfo info;
+    info.cats = conf.startingCatalysts;
+    info.desc = description;
+    info.catCount = conf.count;
+    info.edge = edge;
+    for (unsigned j = 0; j < conf.count; j++) {
+      int idx = catalysts[conf.curs[j]].inputIndex;
+      if (idx >= 0 && std::find(info.usage.begin(), info.usage.end(), idx) == info.usage.end())
+        info.usage.push_back(idx);
+    }
 
-      std::vector<bool> used(catalystUsage.size(), false);
-      for (unsigned j = 0; j < conf.count; j++) {
-        int idx = catalysts[conf.curs[j]].inputIndex;
-        if (idx >= 0 && !used[idx]) {
-          used[idx] = true;
-          catalystUsage[idx]++;
-        }
-      }
+    std::lock_guard<std::mutex> lk(mtx);
+    if (AddSolution(init, afterCatalyst, steppedCatalysts, conf, successtime - params.stableInterval + 2, goal, &extent, info)) {
 
       if (params.maxResults > 0 && found >= params.maxResults && !stopFlag.exchange(true))
         stopReason = "max-results reached";
     }
+  }
+
+  // Stores a solution in the filtered results (caller holds mtx). False if it is a duplicate.
+  bool AddSolution(LifeState &init, const LifeState &afterCatalyst, const LifeState &steppedCatalysts,
+                   const Configuration &conf, unsigned firstGen, const LifeState &goal, const LifeState *extent,
+                   const SolutionInfo &info) {
+    if (!categoryContainer->Add(init, afterCatalyst, steppedCatalysts, conf, firstGen, 0, goal, extent, info))
+      return false;
+    if (info.edge)
+      edgeFlagged++;
+    found++;
+    solutionLines.push_back(info.desc);
+    for (int idx : info.usage)
+      if (idx >= 0 && idx < (int)catalystUsage.size())
+        catalystUsage[idx]++;
+    return true;
   }
 
   // One line per solution: where each catalyst sits (oriented RLE + top-left).
@@ -3173,7 +3364,7 @@ public:
 
   // Union of all search-area rectangles (default rectangle if none were
   // given) minus all exclude-area rectangles.
-  LifeState BuildSearchBounds() const {
+  LifeState BuildSearchBounds(bool print = true) const {
     LifeState bounds;
     if (params.searchAreas.empty() && !params.catalystZones.empty()) {
       bounds = ~LifeState(); // catalyst-zone limits the placements instead
@@ -3188,20 +3379,101 @@ public:
       bounds &= ~LifeState::SolidRect(r[0], r[1], r[2], r[3]);
     bounds &= FundamentalDomain(params.symmetry);
 
-    std::cout << "Search area: " << std::max<size_t>(1, params.searchAreas.size())
+    if (print)
+      std::cout << "Search area: " << std::max<size_t>(1, params.searchAreas.size())
               << " rectangle(s), " << params.excludeAreas.size() << " excluded, "
               << bounds.GetPop() << " positions" << std::endl;
     return bounds;
   }
 
-  void Search() {
+  // --merge: reads the .cfdata files of earlier runs of this same input file,
+  // combines them (duplicates removed as in a search) and writes the usual
+  // output files with "_merged" added to their names.
+  int Merge(const std::vector<std::string> &files) {
+    for (std::string *f : {&params.outputFile, &params.fullReportFile, &params.outputList, &params.uniqueFile})
+      if (!f->empty())
+        *f = AddSuffix(*f, "_merged");
+    params.fullReportFile.clear(); // the data files hold the filtered results only
+    LifeState patSym;
+    patSym.JoinWSymChain(pat, params.symmetryChain);
+    unsigned read = 0, files_ok = 0;
+    bool allFinished = true;
+    for (const std::string &fn : files) {
+      std::ifstream in(fn.c_str());
+      if (!in.good())
+        Die("--merge: cannot open " + fn);
+      std::string line;
+      bool finished = false, headerOk = false;
+      while (std::getline(in, line)) {
+        if (!line.empty() && line.back() == '\r')
+          line.pop_back();
+        if (line.compare(0, 8, "# input ") == 0) {
+          headerOk = true;
+          finished = line.find("| finished yes") != std::string::npos;
+          std::string want = "| rule " + RuleForHeader() + " | torus " + std::to_string(N) + " ";
+          if (line.find(want) == std::string::npos)
+            std::cout << "Warning: " << fn << " was made with a different rule or torus (" << line.substr(2) << ")" << std::endl;
+          continue;
+        }
+        if (line.empty() || line[0] == '#')
+          continue;
+        std::vector<std::string> f;
+        split(line, '\t', f);
+        if (f.size() < 7)
+          Die("--merge: " + fn + " has a damaged line: " + line.substr(0, 60));
+        std::vector<std::string> c = splitwhitespace(f[1]), gl = splitwhitespace(f[2]);
+        if (c.size() != 3 || gl.size() != 3)
+          Die("--merge: " + fn + " has a damaged line: " + line.substr(0, 60));
+        SolutionInfo info;
+        info.cats = LifeState::Parse(c[0].c_str(), atoi(c[1].c_str()), atoi(c[2].c_str()));
+        LifeState goal;
+        if (gl[0] != "-")
+          goal = LifeState::Parse(gl[0].c_str(), atoi(gl[1].c_str()), atoi(gl[2].c_str()));
+        if (f[3] != "-") {
+          std::vector<std::string> u;
+          split(f[3], ',', u);
+          for (const std::string &x : u)
+            info.usage.push_back(atoi(x.c_str()));
+        }
+        info.catCount = atoi(f[4].c_str());
+        info.edge = f[5] == "1";
+        info.desc = f[6];
+        for (size_t k = 7; k < f.size(); k++)
+          info.desc += "\t" + f[k];
+        const unsigned firstGen = atoi(f[0].c_str());
+        LifeState init = info.cats | patSym;
+        LifeState after = init, stepped = info.cats;
+        after.Step(firstGen);
+        stepped.Step(firstGen);
+        Configuration conf;
+        AddSolution(init, after, stepped, conf, firstGen, goal, nullptr, info);
+        read++;
+      }
+      if (!headerOk)
+        Die("--merge: " + fn + " is not a CatForce .cfdata file");
+      allFinished = allFinished && finished;
+      files_ok++;
+    }
+    searchFinished = true;
+    FinalReport();
+    std::cout << "Merged " << files_ok << " file(s): " << read << " solutions read, " << found << " kept"
+              << (params.keepDuplicates ? "" : " (" + std::to_string(categoryContainer->duplicatesDropped) + " duplicates removed)")
+              << (allFinished ? "" : "; note: some of these runs had not finished") << std::endl;
+    return 0;
+  }
+
+  // countOnly: run only the first level and return how many first placements
+  // this run (part / resume-from) will search.
+  unsigned long long Search(bool countOnlyPass = false) {
+    countOnly = countOnlyPass;
+    countedRoots = 0;
     Configuration config;
     config.count = 0;
     config.transparentCount = 0;
     config.mustIncludeCount = 0;
     config.state.JoinWSymChain(pat, params.symmetryChain);
 
-    LifeState bounds = BuildSearchBounds(); // already limited to the symmetry's fundamental domain
+    LifeState bounds = BuildSearchBounds(!countOnlyPass); // already limited to the symmetry's fundamental domain
 
     if (bounds.IsEmpty()) {
       std::cout << "The search area is empty (check search-area / exclude-area / symmetry)" << std::endl;
@@ -3216,7 +3488,7 @@ public:
     std::vector<LifeState> masks(catalysts.size());
     for (unsigned s = 0; s < catalysts.size(); s++) {
       masks[s] = config.state.Convolve(catalysts[s].reactionMask) | ~bounds;
-      if (!catalystZone.IsEmpty() || !noCatalystZone.IsEmpty()) {
+      if (!catalystZone.IsEmpty() || !noCatalystZone.IsEmpty() || !catalysts[s].zone.IsEmpty()) {
         LifeState cells;
         for (const LifeState &ph : catalysts[s].phases)
           cells |= ph;
@@ -3226,6 +3498,11 @@ public:
           masks[s] |= (~zone).Convolve(cells);
         if (!noCatalystZone.IsEmpty())
           masks[s] |= noZone.Convolve(cells);
+        if (!catalysts[s].zone.IsEmpty()) { // cat option zone
+          LifeState own;
+          own.JoinWSymChain(catalysts[s].zone, params.symmetryChain);
+          masks[s] |= (~own).Convolve(cells);
+        }
       }
     }
 
@@ -3278,6 +3555,8 @@ public:
     unsigned threads = params.numThreads;
     if (threads == 0)
       threads = std::max(1u, std::thread::hardware_concurrency());
+    if (countOnlyPass)
+      threads = 1;
 
     gNumWorkers = threads;
     gCurRoot.reset(new std::atomic<unsigned long>[threads]);
@@ -3304,6 +3583,12 @@ public:
       for (auto &th : pool)
         th.join();
     }
+    countOnly = false;
+    if (countOnlyPass) {
+      interactingRejected = 0; // counted again by the real search
+      progressGen = 0;
+    }
+    return countedRoots.load();
   }
 
   // Printed by --check and at the start of a search.
@@ -3323,7 +3608,8 @@ public:
               << (keepEmpty.IsEmpty() ? "" : ", " + std::to_string(keepEmpty.GetPop()) + " keep-empty cells") << std::endl
               << "  catalysts:     " << inputNames.size() << " cat line(s), " << catalysts.size()
               << " placements to try (orientations/phases included)" << std::endl
-              << "  to place:      " << params.numCatalysts << " catalyst(s), stable for " << params.stableInterval << " gens" << std::endl
+              << "  to place:      " << (params.minCatalysts < params.numCatalysts ? std::to_string(params.minCatalysts) + " to " : std::string())
+              << params.numCatalysts << " catalyst(s), stable for " << params.stableInterval << " gens" << std::endl
               << "  generations:   max " << params.maxGen << ", first interaction " << params.startGen << ".." << params.lastGen << std::endl
               << "  filters:       " << params.targetFilter.size() << std::endl
               << "  threads:       " << (params.numThreads == 0 ? std::string("auto (") + std::to_string(std::max(1u, std::thread::hardware_concurrency())) + ")" : std::to_string(params.numThreads)) << std::endl
@@ -3494,11 +3780,12 @@ public:
 
       // Catalysts are still missing here but none can be placed in time any
       // more, so nothing below this point of the search can succeed.
-      if (config.count != totalCats && (int)g > latestPlacementGenAny)
+      // (a configuration with enough catalysts for a result goes on, it just stops placing)
+      if (config.count < minTotal && (int)g > latestPlacementGenAny)
         break;
 
       // Try adding a catalyst
-      if (config.state.gen >= params.startGen && config.count != totalCats) {
+      if (config.state.gen >= params.startGen && config.count != totalCats && (int)g <= latestPlacementGenAny) {
         const LifeState next = traj.At(config.state.gen + 1);
 
         LifeState activePart = (~history).ZOI() & config.state & ~config.catalystsState;
@@ -3534,6 +3821,13 @@ public:
           for (unsigned s = 0; s < catalysts.size(); s++) {
             if (catalysts[s].fixed)
               continue;
+            if (catalysts[s].maxUses) {
+              unsigned uses = 0;
+              for (unsigned j = 0; j < config.count; j++)
+                uses += catalysts[config.curs[j]].inputIndex == catalysts[s].inputIndex;
+              if (uses >= catalysts[s].maxUses)
+                continue;
+            }
             if (config.transparentCount == params.numTransparent && catalysts[s].transparent)
               continue;
             if (config.count == totalCats - 1 && config.mustIncludeCount == 0 && !catalysts[s].mustInclude)
@@ -3802,11 +4096,15 @@ public:
                 if (myShare) tlsTicket = gNextTicket.fetch_add(1);
               }
 
-              if (myShare) {
+              if (myShare && countOnly && config.count == rootCount) {
+                countedRoots++; // counting pass: only count it
+              } else if (myShare) {
                 RecursiveSearch(newConfig, history, newRequiredMask, newAntirequired, std::move(newMasks),
                                 shiftedTargets, missingTime, recoveredTime, &traj, catCols);
                 if (config.count == rootCount) {
-                  rootPlacementsDone++;
+                  // (with split-level 2 every thread runs every first placement: count one thread's)
+                  if (!(tlsParts > 1 && params.numCatalysts >= 2 && params.splitLevel >= 2) || tlsPart == 0)
+                    rootPlacementsDone++;
                   MaybeReport();
                 }
               }
@@ -3837,7 +4135,7 @@ public:
         }
       }
 
-      if (config.count == totalCats && !success) {
+      if (config.count >= minTotal && !success && config.mustIncludeCount > 0) {
         bool allRecovered = true;
         for (unsigned i = 0; i < config.count; i++) {
           if (catalysts[config.curs[i]].sacrificial)
@@ -4011,6 +4309,7 @@ int main(int argc, char *argv[]) {
     std::cout << "Usage: CatForce <in file> [--check] [--threads N] [--max-time N[s|m|h]] [--max-results N] [--part K/N] [--verbose]" << std::endl
               << "  --check        parse the file, print a summary and exit" << std::endl
               << "  --show-input   print the keyword lines the file amounts to (layouts, << blocks expanded)" << std::endl
+              << "  --merge F...   combine the .cfdata files of earlier runs of this file (parts, resumed runs)" << std::endl
               << "  --threads N    worker threads (0 = all cores)" << std::endl
               << "  --max-time T   stop after T (e.g. 90, 15m, 2h) and save" << std::endl
               << "  --max-results N  stop after N solutions" << std::endl
@@ -4029,6 +4328,7 @@ int main(int argc, char *argv[]) {
   std::string cliPart;
   bool cliVerbose = false;
   bool compileRule = false;
+  std::vector<std::string> mergeFiles;
   for (int i = 2; i < argc; i++) {
     std::string a = argv[i];
     auto next = [&](const char *what) -> std::string {
@@ -4055,6 +4355,12 @@ int main(int argc, char *argv[]) {
       cliPart = next("--part");
     else if (a == "--verbose")
       cliVerbose = true;
+    else if (a == "--merge") {
+      while (i + 1 < argc)
+        mergeFiles.push_back(argv[++i]);
+      if (mergeFiles.empty())
+        Die("--merge needs one or more .cfdata files");
+    }
     else
       Die("Unknown option: " + a);
   }
@@ -4068,7 +4374,10 @@ int main(int argc, char *argv[]) {
             << "Initializing please wait..." << std::endl;
 
   CatalystSearcher searcher;
+  searcher.skipMasks = !mergeFiles.empty();
   searcher.Init(argv[1]);
+  if (!mergeFiles.empty())
+    return searcher.Merge(mergeFiles);
   if (cliThreads >= 0) searcher.params.numThreads = cliThreads;
   if (cliMaxTime >= 0) searcher.params.maxTimeSec = (unsigned)cliMaxTime;
   if (cliMaxResults >= 0) searcher.params.maxResults = (unsigned)cliMaxResults;
@@ -4103,6 +4412,7 @@ int main(int argc, char *argv[]) {
 
   if (checkOnly) {
     searcher.PrintSummary();
+    std::cout << "  first placements: " << searcher.Search(true) << " (each is searched separately; the status line counts them)" << std::endl;
     std::cout << std::endl << "Check finished (no search was run)." << std::endl;
     return 0;
   }
@@ -4112,6 +4422,13 @@ int main(int argc, char *argv[]) {
             << "Initialization finished, searching..." << std::endl
             << std::endl;
 
+  {
+    double t0 = searcher.ElapsedSeconds();
+    searcher.totalRoots = searcher.Search(true);
+    searcher.countSeconds = searcher.ElapsedSeconds();
+    std::cout << "First placements to search: " << searcher.totalRoots << " (counted in "
+              << std::fixed << std::setprecision(1) << searcher.countSeconds - t0 << " s)" << std::endl;
+  }
   searcher.Search();
   searcher.searchFinished = true;
   searcher.FinalReport();

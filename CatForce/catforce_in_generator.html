@@ -394,6 +394,7 @@ details.more > .body { display: flex; flex-direction: column; gap: 12px; }
       <span>Check it, then run it:</span>
       <span><code id="runCheck">./CatForce search.txt --check</code></span>
       <span><code id="runGo">./CatForce search.txt</code></span>
+      <span id="runMerge" hidden>After all parts have run, combine them: <code></code></span>
     </div>
   </section>
 </aside>
@@ -746,7 +747,7 @@ const LIB = [
   ['Aircraft carrier', '2o$o2bo$2b2o!'], ['Long ship', '2o$obo$bobo$2b2o!'], ['Mango', 'b2o$o2bo$bo2bo$2b2o!'],
   ['Blinker', '3o!'], ['Toad', 'b3o$3o!'], ['Beacon', '2o$o$3bo$2b2o!']
 ];
-const KEYWORDS = new Set(['rule', 'include', 'cat', 'max-gen', 'num-catalyst', 'num-transparent', 'stable-interval', 'pat', 'search-area',
+const KEYWORDS = new Set(['sort-by', 'rule', 'include', 'cat', 'max-gen', 'num-catalyst', 'num-transparent', 'stable-interval', 'pat', 'search-area',
   'exclude-area', 'start-gen', 'last-gen', 'output', 'full-report', 'filter', 'andfilter', 'orfilter', 'match', 'fit-in-width-height',
   'max-category-size', 'symmetry', 'also-required', 'stop-after-cats-destroyed', 'max-junk', 'keep-duplicates', 'keep-interacting',
   'output-gap', 'bait', 'threads', 'max-time', 'max-results', 'output-list', 'verbose', 'part', 'unique-output', 'lightcone',
@@ -770,7 +771,8 @@ function defaultState() {
 function newCat() {
   return {name: '', rle: '', maxActive: '20', sym: 'auto', autoOff: true, dx: '0', dy: '0',
     forbidden: [], req: {rle: '', x: '0', y: '0'}, anti: {rle: '', x: '0', y: '0'}, locus: {rle: '', x: '0', y: '0'},
-    transparent: false, mustinclude: false, checkRecovery: false, sacrificial: false, isBlinker: false, period: ''};
+    transparent: false, mustinclude: false, checkRecovery: false, sacrificial: false, isBlinker: false, period: '',
+    maxUses: '', zone: {rle: '', x: '0', y: '0'}};
 }
 const newBait = () => ({rle: '', x: '0', y: '0', survive: '', absent: ''});
 const newArea = mode => ({mode, x: '', y: '', w: '', h: ''});
@@ -779,7 +781,7 @@ const newFixed = () => ({rle: '', x: '0', y: '0', maxActive: '20'});
 
 const SIZE_FIELDS = [
   ['maxGen', 'Generations to simulate', 'max-gen', '250', 'How long each candidate is run.'],
-  ['numCat', 'Catalysts per result', 'num-catalyst', '2', 'Exactly this many (1–5), plus their symmetric copies. Each extra catalyst multiplies the search time.'],
+  ['numCat', 'Catalysts per result', 'num-catalyst', '2', 'Exactly this many (1–5), or a range such as 1-3 for every count in it, plus their symmetric copies. Each extra catalyst multiplies the search time.', false],
   ['stable', 'Recovery time', 'stable-interval', '15', 'Generations every catalyst must stay intact at the end to count as recovered.']
 ];
 const LIMIT_FIELDS = [
@@ -799,6 +801,7 @@ const RUN_FIELDS = [
   ['maxResults', 'Stop after this many results', 'max-results', 'no limit', '', true],
   ['part', 'Run one share of the search', 'part', 'whole search', 'K/N, e.g. 2/4 on the second of four computers.', false],
   ['outputGap', 'Gap between results', 'output-gap', '10', 'Empty cells between results in the RLE.', true],
+  ['sortBy', 'Order of results', 'sort-by', 'found', 'recovery, cells, catalysts, junk or frequency; several with commas, e.g. catalysts,recovery.', false],
   ['uniqueOutput', 'One square per outcome', 'unique-output', '<output>_unique.rle', 'File with the first result of each row, in a square grid.', false],
   ['resumeFrom', 'Resume a stopped run', 'resume-from', 'from the start', 'The number a stopped run printed (also in <file>.resume).', true],
   ['splitLevel', 'Thread sharing level', 'split-level', '1', '2 = threads share second-catalyst placements (helps many cores with few first placements).', true]
@@ -857,11 +860,16 @@ function build(S, forSetup) {
   const T = TOR(), H = T / 2;
   if (T !== 64) L.push('torus ' + T);
 
-  num('max-gen', S.maxGen, 1); num('num-catalyst', S.numCat, 1); num('stable-interval', S.stable);
+  num('max-gen', S.maxGen, 1); num('stable-interval', S.stable);
+  const ncRange = tr(S.numCat).match(/^(\d+)-(\d+)$/);
+  if (ncRange) {
+    if (+ncRange[1] < 1 || +ncRange[1] > +ncRange[2]) err('Catalysts per result: a range must look like 1-3 (smallest first, at least 1).');
+    else L.push('num-catalyst ' + tr(S.numCat));
+  } else num('num-catalyst', S.numCat, 1);
   num('start-gen', S.startGen); num('last-gen', S.lastGen); num('num-transparent', S.numTransparent);
   num('stop-after-cats-destroyed', S.stopAfter); num('max-category-size', S.maxCatSize);
   const g = (v, d) => tr(v) === '' || !isInt(v) ? d : +v;
-  const maxGen = g(S.maxGen, 250), startGen = g(S.startGen, 1), lastGen = g(S.lastGen, maxGen - 1), nc = g(S.numCat, 2), stable = g(S.stable, 15);
+  const maxGen = g(S.maxGen, 250), startGen = g(S.startGen, 1), lastGen = g(S.lastGen, maxGen - 1), nc = ncRange ? +ncRange[2] : g(S.numCat, 2), stable = g(S.stable, 15);
   if (startGen > lastGen) warn('The first contact window is empty (start-gen ' + startGen + ' is after last-gen ' + lastGen + ').');
   if (nc > 5) err('num-catalyst: CatForce places at most 5 catalysts.');
   else if (nc >= 4) tip(nc + ' catalysts per result can take days. Try a smaller number first.');
@@ -947,6 +955,12 @@ function build(S, forSetup) {
     else L.push('part ' + tr(S.part));
   }
   num('output-gap', S.outputGap);
+  if (tr(S.sortBy)) {
+    const keys = tr(S.sortBy).split(',').map(tr);
+    const bad = keys.find(k => !['found', 'recovery', 'cells', 'catalysts', 'junk', 'frequency'].includes(k));
+    if (bad) err('Order of results: unknown key "' + bad + '" (use found, recovery, cells, catalysts, junk, frequency).');
+    else L.push('sort-by ' + keys.join(','));
+  }
   if (tr(S.uniqueOutput)) L.push('unique-output ' + fname(S.uniqueOutput));
   num('resume-from', S.resumeFrom);
   num('split-level', S.splitLevel, 1);
@@ -985,7 +999,8 @@ function build(S, forSetup) {
       return ' ' + kw + ' ' + r2 + ' ' + tr(o.x) + ' ' + tr(o.y);
     };
     for (const f of c.forbidden) line += xy('forbidden', f);
-    line += xy('required', c.req) + xy('antirequired', c.anti) + xy('locus', c.locus);
+    line += xy('required', c.req) + xy('antirequired', c.anti) + xy('locus', c.locus) + xy('zone', c.zone || {rle: ''});
+    if (tr(c.maxUses)) { if (!isInt(c.maxUses) || +c.maxUses < 1) err(n + ': "at most" must be a whole number of at least 1.'); else line += ' max-uses ' + tr(c.maxUses); }
     if (c.transparent) line += ' transparent';
     if (c.mustinclude) line += ' mustinclude';
     if (c.checkRecovery) line += ' check-recovery';
@@ -1243,7 +1258,7 @@ function parseIn(text) {
   const simple = {'max-gen': 'maxGen', 'start-gen': 'startGen', 'last-gen': 'lastGen', 'num-catalyst': 'numCat', 'num-transparent': 'numTransparent',
     'stable-interval': 'stable', 'stop-after-cats-destroyed': 'stopAfter', 'max-category-size': 'maxCatSize', 'output-gap': 'outputGap',
     'threads': 'threads', 'max-results': 'maxResults', 'max-time': 'maxTime', 'max-junk': 'maxJunk', 'part': 'part', 'symmetry': 'sym',
-    'torus': 'torus', 'spaceship-cutoff': 'spaceshipCutoff', 'torus-edge': 'torusEdge', 'resume-from': 'resumeFrom', 'split-level': 'splitLevel'};
+    'torus': 'torus', 'spaceship-cutoff': 'spaceshipCutoff', 'sort-by': 'sortBy', 'torus-edge': 'torusEdge', 'resume-from': 'resumeFrom', 'split-level': 'splitLevel'};
   const extra = [];
   const yes = v => !/^(no|false|0|off)$/i.test(v);
   for (const line of text.split(/\r?\n/)) {
@@ -1296,6 +1311,8 @@ function parseIn(text) {
             o.rle = t[i + 1] || ''; o.x = t[i + 2] || '0'; o.y = t[i + 3] || '0'; i += 4;
           }
           else if (w === 'period') { c.period = t[i + 1] || ''; i += 2; }
+          else if (w === 'max-uses') { c.maxUses = t[i + 1] || ''; i += 2; }
+          else if (w === 'zone') { c.zone = {rle: t[i + 1] || '', x: t[i + 2] || '0', y: t[i + 3] || '0'}; i += 4; }
           else if (w === 'transparent') { c.transparent = true; i++; }
           else if (w === 'mustinclude') { c.mustinclude = true; i++; }
           else if (w === 'check-recovery') { c.checkRecovery = true; i++; }
@@ -1475,6 +1492,7 @@ function renderCats() {
             ${c.autoOff ? '' : `<label class="fld"><span class="lbl">dx</span><input type="text" data-k="cats.${i}.dx" value="${esc(c.dx)}" inputmode="numeric"></label>
             <label class="fld"><span class="lbl">dy</span><input type="text" data-k="cats.${i}.dy" value="${esc(c.dy)}" inputmode="numeric"></label>`}
             <label class="fld"><span class="lbl">Period <code>period</code></span><input type="text" data-k="cats.${i}.period" value="${esc(c.period)}" inputmode="numeric" placeholder="1"></label>
+            <label class="fld"><span class="lbl">At most per result <code>max-uses</code></span><input type="text" data-k="cats.${i}.maxUses" value="${esc(c.maxUses || '')}" inputmode="numeric" placeholder="no limit"></label>
           </div>
           <div class="checks">
             <label class="check"><input type="checkbox" data-k="cats.${i}.isBlinker"${c.isBlinker ? ' checked' : ''}><span>Accept any phase <code>isblinker</code><small>An oscillator counts as recovered in any of its phases.</small></span></label>
@@ -1489,6 +1507,7 @@ function renderCats() {
           <h3>Cells that must stay on <span class="opt"><code>required</code></span></h3>${subRow(`cats.${i}.req`, c.req, 'Required')}
           <h3>Cells that must stay off <span class="opt"><code>antirequired</code></span></h3>${subRow(`cats.${i}.anti`, c.anti, 'Antirequired')}
           <h3>Cells that must be hit first <span class="opt"><code>locus</code>: or click cells on the thumbnail (red outline)</span></h3>${subRow(`cats.${i}.locus`, c.locus, 'Locus')}
+          <h3>Only inside this area <span class="opt"><code>zone</code>: cells on the torus (x, y = top-left) the catalyst must lie within</span></h3>${subRow(`cats.${i}.zone`, c.zone || {rle: '', x: '0', y: '0'}, 'Zone')}
         </div></details>
       </div>
     </div>`;
@@ -1649,6 +1668,10 @@ function update() {
   const fn = tr($('#fname').value) || 'search.txt';
   $('#runCheck').textContent = './CatForce ' + fn + ' --check';
   $('#runGo').textContent = './CatForce ' + fn;
+  const pm = tr(S.part).match(/^(\d+)\/(\d+)$/), out0 = (tr(S.output) || 'results.rle').replace(/\.[^.\/]*$/, '');
+  $('#runMerge').hidden = !pm;
+  if (pm) $('#runMerge').querySelector('code').textContent = './CatForce ' + fn + ' --merge ' +
+    Array.from({length: +pm[2]}, (_, k) => out0 + '_part' + (k + 1) + 'of' + pm[2] + '.cfdata').join(' ');
   renderPatSummary(); symNote(); drawMap();
   clearTimeout(saveTimer);
   saveTimer = setTimeout(() => { try { localStorage.setItem('catforce-gen-v2', JSON.stringify({S, fname: $('#fname').value})); } catch (e) {} }, 400);

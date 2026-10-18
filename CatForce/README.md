@@ -26,7 +26,7 @@ denote optional parameters.
 | `max-gen`             | `n`                      | Overall maximum generation                                              |
 | `start-gen`           | `n`                      | The min gen the _first_ encounter occurs                                |
 | `last-gen`            | `n`                      | The max gen the _first_ encounter occurs                                |
-| `num-catalyst`        | `n`                      | The number of catalysts to place (1 to 5)                               |
+| `num-catalyst`        | `n` or `m-n`             | The number of catalysts to place (1 to 5), or a range: `1-3` reports every result with 1, 2 or 3 |
 | `num-transparent`     | `n`                      | The number of catalysts marked `transparent` that may appear            |
 | `stable-interval`     | `n`                      | Gens the catalysts must remain untouched to be considered stable        |
 | `search-area`         | `x y w h`                | Search area; may be repeated, rectangles are combined (union)           |
@@ -47,6 +47,8 @@ denote optional parameters.
 |                       | `(sacrificial)`          | Does not need to recover                                                |
 |                       | `(period n)`             | Periodic catalyst                                                       |
 |                       | `(isblinker)`            | Accept the catalyst in any phase (any oscillator, not just blinkers)    |
+|                       | `(max-uses n)`           | At most n copies of this catalyst per result                            |
+|                       | `(zone rle x y)`         | This catalyst must lie inside these cells (torus coordinates); may be repeated |
 | `output`              | `filename`               | Output filename                                                         |
 | `(and/or)filter`      | `genOrRange rle dx dy`   | Filter that must be matched for the solution to be accepted (see below) |
 | `match`               | `genOrRange rle`         | Filter that checks whether the pattern occurs anywhere                  |
@@ -74,6 +76,7 @@ denote optional parameters.
 | `catalyst-zone`       | `rle x y`                | Catalysts must lie entirely inside these cells; may be repeated (union) |
 | `no-catalyst-zone`    | `rle x y`                | No catalyst cell may lie on these cells; may be repeated            |
 | `keep-empty`          | `rle x y`                | These cells must stay dead in every generation; may be repeated     |
+| `sort-by`             | `key[,key...]`           | Order of the output: `found` (default), `recovery`, `cells`, `catalysts`, `junk`, `frequency` (see below) |
 | `torus-edge`          | `flag`, `drop` or `off`  | Results whose reaction reaches the torus edge: marked (default), dropped, or not checked |
 | `layout`              | `file.rle [x y]`         | Read a layout file (see **Layout files**) here                          |
 | `legend`              | `4=goal:20-max ...`      | Change what layout states mean (for `layout` lines in this file)       |
@@ -155,7 +158,7 @@ touch the catalysts already placed are also skipped as soon as they are tried.
 `keep-interacting yes` turns both off.
 
 **Command line**: `./CatForce file.in [--check] [--show-input] [--threads N] [--max-time T]
-[--max-results N] [--part K/N] [--verbose] [--compile-rule]`. `--check` parses the file, prints a
+[--max-results N] [--part K/N] [--verbose] [--compile-rule] [--merge F.cfdata ...]`. `--check` parses the file, prints a
 summary (rule, symmetry, pattern, number of catalysts and placements, search
 positions, output files) and exits without searching; the other options
 override the same keywords in the file.
@@ -281,6 +284,42 @@ isotropic. The number removed is printed at the end. Add
 - A filter range may end in `max` (= `max-gen` − 1): `andfilter 20-max 2o$2o! 5 5`.
 - `./CatForce file --show-input` prints the plain keyword lines a file amounts to
   (layouts and `<<` blocks expanded) and exits.
+
+**Catalyst ranges (`num-catalyst 1-3`)**: one search reports every result with
+between the two numbers of catalysts. It costs little more than searching for
+the larger number alone, since the smaller configurations are visited on the way
+anyway. (Checked: `1-2` gives exactly the results of `1` plus those of `2`.) Every
+catalyst of a result must interact, so a larger result is never a smaller one
+with an idle catalyst added.
+
+**Output order and row notes (`sort-by`)**: rows (one per distinct outcome) and
+the results in each row are written in the order they were found, unless
+`sort-by` gives keys: `recovery` (catalysts recovered earliest), `cells` (fewest
+catalyst cells), `catalysts` (fewest catalysts), `junk` (smallest outcome: fewest
+non-catalyst cells left), `frequency` (rows with the most results first). Several
+keys are tried in turn: `sort-by catalysts,recovery`. The results file starts
+with one `#C row ...` line per row: where it starts (y), how many results it has,
+and the first one's recovery time, catalyst count and cells, outcome size and
+cat lines.
+
+**Progress**: before searching, the first placements are counted (a quick pass
+over the first level only; `--check` prints the number too). The status line
+then shows e.g. `412 of 1608 first placements, 25.6%, roughly 0:12:30 left`. The
+time left is a rough guess: first placements can take very different times.
+
+**Combining runs (`--merge`)**: every run also writes `<output>.cfdata`, a plain
+text list of its results (catalyst positions, recovery time, goal cells). After
+running a search in parts (`--part`) or in pieces (`resume-from`), combine them:
+
+    ./CatForce search.in --merge results_part1of2.cfdata results_part2of2.cfdata
+
+This reads `search.in` for the settings (rule, pattern, symmetry, sort order),
+removes duplicates across the files as a single run would, and writes the usual
+output files with `_merged` added to their names (`results_merged.rle`, its
+`_unique`, `_history` and list files). (Checked: with `keep-duplicates yes`,
+merging 3 parts gives exactly the results of one full run; with duplicate
+removal the count is the same, though which of two mirror images is kept can
+differ.) A warning is printed if a file was made with another rule or torus.
 
 **Fixed catalysts (`fixed-cat`)**: `fixed-cat <rle> <x> <y> <max-active> [options]`
 puts a catalyst in place before the search starts, with its top-left corner at

@@ -92,6 +92,14 @@ Engine changes (not visible in the input format):
 - Manual loci on 3q4i-3 (2-cat test): 190 s → 24 s but lost 4 of 8 results.
   `contact-filter yes` beat that (10.5 s, nothing lost).
 - `max-active 100 → 20` gave ~40% time cut with identical results in an earlier test.
+- Also added: `num-catalyst m-n` ranges (success at count >= minTotal; such a node keeps
+  simulating but stops placing past latestPlacementGenAny), cat options `max-uses n` and
+  `zone rle x y`, `sort-by`, `#C row ...` summaries in the results file, `<output>.cfdata` data
+  file + `--merge`, first-placement counting pass (progress % and rough time left; `--check`
+  prints it). Generator has fields for all of them and a merge-command hint for `part`.
+  Not done (judged not worth it): embedding the Life catalyst lists in the generator (their
+  forbidden patterns are Life-specific); a generator run-size estimate (the real count from
+  CatForce is cheap); LifeViewer labels (unsure of its coordinate convention; #C row lines instead).
 - Speed work (2026-10-17), results identical everywhere (suite, 2- and 3-catalyst checks):
   * Trajectories: each search node keeps its "no more catalysts" evolution; a child steps only
     the columns where it differs from its parent (narrowed every generation) and copies the rest
