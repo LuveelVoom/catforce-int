@@ -19,6 +19,7 @@
 #include <chrono>
 #include <csignal>
 #include <unordered_map>
+#include <unordered_set>
 #include <map>
 #include <set>
 #include <array>
@@ -112,6 +113,8 @@ public:
   unsigned long resumeFrom = 0; // skip this many top-level placements (from a paused run)
   unsigned splitLevel = 1;   // 2 = threads share out second-level placements
   bool soloRecovery = false; // auto contact filter: a new catalyst must recover alone at least once
+  bool uniqueRecovery = false; // unsafe: one placement per identical perturbation (until the catalyst is back)
+  unsigned oscMin = 3, oscMax = 0; // find-oscillators: periods to report (oscMax 0 = off)
   bool lightcone = true;
   bool lightconeTight = false; // unsafe: failure region = only the mismatched cells at the failure time     // prune placements that cannot reach the next catalyst failure in time
   std::string uniqueFile;    // one square per distinct outcome (default: <output>_unique.rle)
@@ -627,6 +630,7 @@ static const char *const kKeywords[] = {
     "symmetry", "also-required", "stop-after-cats-destroyed", "max-junk", "keep-duplicates",
     "keep-interacting", "output-gap", "bait", "threads", "max-time", "max-results", "output-list",
     "verbose", "part", "unique-output", "lightcone", "lightcone-tight", "resume-from", "contact-filter", "split-level",
+    "unique-recovery", "find-oscillators",
     "spaceship-cutoff", "torus", "fixed-cat", "catalyst-zone", "no-catalyst-zone", "keep-empty", "torus-edge", "sort-by",
     "layout", "legend"};
 
@@ -1367,6 +1371,29 @@ void ReadParams(const std::string& fname, std::vector<CatalystInput> &catalysts,
       params.splitLevel = std::stoul(elems[1]);
     if (elems[0] == "contact-filter")
       params.soloRecovery = !(elems[1] == "no" || elems[1] == "false" || elems[1] == "0" || elems[1] == "off");
+    if (elems[0] == "unique-recovery")
+      params.uniqueRecovery = !(elems[1] == "no" || elems[1] == "false" || elems[1] == "0" || elems[1] == "off");
+    if (elems[0] == "find-oscillators") {
+      // "yes" (periods 3-60), "max", or "min-max"; "no" turns it off
+      const std::string &v = elems[1];
+      if (v == "no" || v == "false" || v == "off" || v == "0") {
+        params.oscMax = 0;
+      } else if (v == "yes" || v == "true" || v == "on") {
+        params.oscMin = 3;
+        params.oscMax = 60;
+      } else {
+        std::vector<std::string> range;
+        split(v, '-', range);
+        if (range.size() == 2) {
+          params.oscMin = ParseIntOrDie(range[0], "find-oscillators (shortest period)", 1);
+          params.oscMax = ParseIntOrDie(range[1], "find-oscillators (longest period)", 1);
+        } else {
+          params.oscMax = ParseIntOrDie(v, "find-oscillators (longest period)", 1);
+        }
+        if (params.oscMin > params.oscMax)
+          Die("find-oscillators " + v + ": the first number must not be larger than the second");
+      }
+    }
     if (elems[0] == "lightcone-tight")
       params.lightconeTight = !(elems[1] == "no" || elems[1] == "false" || elems[1] == "0" || elems[1] == "off");
     if (elems[0] == "lightcone")
@@ -1889,6 +1916,19 @@ static uint64_t StateKey(const LifeState &st) {
   return h;
 }
 
+// Fast 64-bit hash of the cells, chained onto h (for in-memory dedupe sets only).
+static inline uint64_t MixState(uint64_t h, const LifeState &st) {
+  for (int i = 0; i < N; i++) {
+    row_t w = st.state[i];
+    for (unsigned b = 0; b < sizeof(row_t) / 8; b++, w >>= 32, w >>= 32) {
+      h ^= (uint64_t)w;
+      h *= 0x9E3779B97F4A7C15ULL;
+      h ^= h >> 29;
+    }
+  }
+  return h;
+}
+
 // Writes a cache file via a temporary name + rename, so an interrupted run never
 // leaves a truncated file behind that a later run would read as valid masks.
 static void WriteCacheAtomically(const std::string &fname, const char *data, size_t bytes) {
@@ -2187,6 +2227,35 @@ public:
   }
 };
 
+// The patterns in a square grid, each cropped to its own bounding box (RLE body with "!").
+static std::string GridRLE(const std::vector<LifeState> &states, int gap) {
+  unsigned n = states.size(), cols = 1;
+  while (cols * cols < n) cols++;
+  std::vector<std::array<int, 4>> box(n);
+  int side = 1;
+  for (unsigned k = 0; k < n; k++) {
+    int minI = N, maxI = -1, minJ = N, maxJ = -1;
+    for (int j = 0; j < N; j++)
+      for (int i = 0; i < N; i++)
+        if (states[k].GetCell(i - N / 2, j - N / 2)) {
+          minI = std::min(minI, i); maxI = std::max(maxI, i);
+          minJ = std::min(minJ, j); maxJ = std::max(maxJ, j);
+        }
+    if (maxI < 0) minI = minJ = maxI = maxJ = 0;
+    box[k] = {minI, maxI, minJ, maxJ};
+    side = std::max(side, std::max(maxI - minI, maxJ - minJ) + 1);
+  }
+  side += gap;
+  unsigned rows = n ? (n + cols - 1) / cols : 1;
+  std::vector<std::vector<uint8_t>> vec(side * cols, std::vector<uint8_t>(side * rows));
+  for (unsigned k = 0; k < n; k++)
+    for (int j = box[k][2]; j <= box[k][3]; j++)
+      for (int i = box[k][0]; i <= box[k][1]; i++)
+        vec[side * (k % cols) + (i - box[k][0])][side * (k / cols) + (j - box[k][2])] =
+            states[k].GetCell(i - N / 2, j - N / 2);
+  return GetRLE(vec) + "!";
+}
+
 class CategoryContainer {
 public:
   std::vector<Category *> categories;
@@ -2394,31 +2463,10 @@ public:
   std::string UniqueRLE(int gap) {
     // Each cell shows the starting pattern (pattern + catalysts) of the first solution of a row,
     // cropped to its own bounding box, so the reaction envelope does not blow the cells up.
-    unsigned n = categories.size(), cols = 1;
-    while (cols * cols < n) cols++;
-    std::vector<std::array<int, 4>> box(n);
-    int side = 1;
-    for (unsigned k = 0; k < n; k++) {
-      int minI = N, maxI = -1, minJ = N, maxJ = -1;
-      for (int j = 0; j < N; j++)
-        for (int i = 0; i < N; i++)
-          if (categories[k]->results[0].init.GetCell(i - N / 2, j - N / 2)) {
-            minI = std::min(minI, i); maxI = std::max(maxI, i);
-            minJ = std::min(minJ, j); maxJ = std::max(maxJ, j);
-          }
-      if (maxI < 0) minI = minJ = maxI = maxJ = 0;
-      box[k] = {minI, maxI, minJ, maxJ};
-      side = std::max(side, std::max(maxI - minI, maxJ - minJ) + 1);
-    }
-    side += gap;
-    unsigned rows = n ? (n + cols - 1) / cols : 1;
-    std::vector<std::vector<uint8_t>> vec(side * cols, std::vector<uint8_t>(side * rows));
-    for (unsigned k = 0; k < n; k++)
-      for (int j = box[k][2]; j <= box[k][3]; j++)
-        for (int i = box[k][0]; i <= box[k][1]; i++)
-          vec[side * (k % cols) + (i - box[k][0])][side * (k / cols) + (j - box[k][2])] =
-              categories[k]->results[0].init.GetCell(i - N / 2, j - N / 2);
-    return GetRLE(vec) + "!";
+    std::vector<LifeState> inits;
+    for (auto &c : categories)
+      inits.push_back(c->results[0].init);
+    return GridRLE(inits, gap);
   }
 };
 
@@ -2717,6 +2765,7 @@ public:
   mutable std::string lastSavedName;
   mutable unsigned lastSavedFound = ~0u;
   mutable unsigned lastSavedFullFound = ~0u;
+  mutable size_t lastSavedOsc = ~(size_t)0;
 
   void Report(bool saveFile = true) const {
     unsigned sec = (unsigned)ElapsedSeconds() + 1;
@@ -2728,6 +2777,8 @@ public:
       std::cout << ", unfiltered: " << fullCategoryContainer->categories.size() << "/"
                 << fullfound;
     }
+    if (params.oscMax > 0)
+      std::cout << ", oscillators: " << oscillators.size();
     std::cout << ", now: ";
     PrintTime(sec);
     std::cout << std::setfill(' ');
@@ -2756,12 +2807,13 @@ public:
     // Skip rewriting the (potentially large) output files if nothing was
     // added since the last save to the same file.
     if (saveFile && params.outputFile == lastSavedName && found == lastSavedFound &&
-        fullfound == lastSavedFullFound)
+        fullfound == lastSavedFullFound && oscillators.size() == lastSavedOsc)
       saveFile = false;
     if (saveFile) {
       lastSavedName = params.outputFile;
       lastSavedFound = found;
       lastSavedFullFound = fullfound;
+      lastSavedOsc = oscillators.size();
       std::cout << "Saving " << params.outputFile << "... " << std::flush;
 
       categoryContainer->SortResults(params.sortBy);
@@ -2793,6 +2845,20 @@ public:
                          std::to_string(categoryContainer->categories.size()) + ")\n" +
                          "x = 0, y = 0, rule = " + RuleForHeader() + "\n" +
                          categoryContainer->UniqueRLE(params.outputGap));
+
+      if (params.oscMax > 0) {
+        std::stringstream osc;
+        std::vector<LifeState> inits;
+        osc << "#C CatForce: " << oscillators.size() << " catalysed oscillator(s), period " << params.oscMin << "-"
+            << params.oscMax << ", one square each, in the order below. Each line gives the catalysts"
+            << " (and their positions) of the search result that made it.\n";
+        for (size_t i = 0; i < oscillators.size(); i++) {
+          osc << "#C " << (i + 1) << ": " << oscillators[i].desc << "\n";
+          inits.push_back(oscillators[i].osc);
+        }
+        osc << "x = 0, y = 0, rule = " << RuleForHeader() << "\n" << GridRLE(inits, params.outputGap);
+        SaveTextAtomically(AddSuffix(params.outputFile, "_osc"), osc.str());
+      }
 
       if (!params.outputList.empty()) {
         std::vector<std::string> sorted = solutionLines;
@@ -3030,6 +3096,14 @@ public:
   }
 
   std::atomic<unsigned> interactingRejected{0};
+  std::atomic<unsigned long long> perturbationDuplicates{0}; // unique-recovery skips
+  // find-oscillators results (guarded by mtx)
+  struct FoundOscillator {
+    LifeState osc; // as found (the phase at the generation where the search stopped)
+    std::string desc;
+  };
+  std::vector<FoundOscillator> oscillators;
+  std::unordered_set<uint64_t> oscKeys;
   // Progress of the top-level loop (first catalyst), shown in the status line.
   std::atomic<unsigned> progressGen{0};
   std::atomic<unsigned long long> rootPlacementsDone{0};
@@ -3616,6 +3690,11 @@ public:
               << "  output:        " << params.outputFile
               << (params.fullReportFile.empty() ? "" : ", " + params.fullReportFile + " (full report)")
               << (params.outputList.empty() ? "" : ", " + params.outputList + " (list)") << std::endl;
+    if (params.uniqueRecovery)
+      std::cout << "  unique-recovery: on (one placement per identical perturbation; may lose results)" << std::endl;
+    if (params.oscMax > 0)
+      std::cout << "  oscillators:   catalysed, period " << params.oscMin << "-" << params.oscMax << " -> "
+                << AddSuffix(params.outputFile, "_osc") << std::endl;
     BuildSearchBounds();
   }
 
@@ -3700,6 +3779,12 @@ public:
     }
     LifeState lcZone;
     int lcZoneGen = -1;
+    std::unordered_set<uint64_t> seenPerturbations; // unique-recovery, per node
+    // find-oscillators: the last oscMax + 1 states of this node, by generation mod (oscMax + 1)
+    std::vector<LifeState> recent(params.oscMax > 0 ? params.oscMax + 1 : 0);
+    if (params.oscMax > 0)
+      recent[config.state.gen % recent.size()] = config.state;
+    const unsigned nodeStartGen = config.state.gen;
 
     for (unsigned g = config.state.gen; g < params.maxGen; g++) {
       if (ShouldStop())
@@ -4013,7 +4098,12 @@ public:
               }
 
               bool soloFail = false;
-              if (params.soloRecovery && !catalysts[s].checkRecovery && !catalysts[s].sacrificial) {
+              const bool soloCheck = params.soloRecovery && !catalysts[s].checkRecovery && !catalysts[s].sacrificial;
+              // (not for the last catalyst: a skipped leaf saves about as much as the check costs)
+              const bool uniqueCheck = params.uniqueRecovery && !catalysts[s].sacrificial && newConfig.count < totalCats;
+              bool perturbationKnown = false; // perturbationKey is set (the catalyst came back alone)
+              uint64_t perturbationKey = 0;
+              if (soloCheck) {
                 // Contact filter: with no further help, the catalyst must come back at least once
                 // within max-active gens. Bad first contacts (catalyst just explodes) fail this.
                 LifeState la = newConfig.state;
@@ -4022,6 +4112,41 @@ public:
                   la.Step();
                   if (shiftedTargets[config.count].MatchedBy(la)) soloFail = false;
                 }
+              }
+              if (uniqueCheck && !soloFail) {
+                // unique-recovery: the board minus the new catalyst, every gen until the catalyst
+                // is back (or max-gen), identifies what the placement does to the reaction. Only
+                // the columns that differ from this node's own evolution are stepped and hashed.
+                Trajectory probe;
+                probe.parent = &traj;
+                probe.diff = catCols;
+                probe.limit = params.maxGen;
+                LifeState la = newConfig.state;
+                LifeState cat = symCatalyst;
+                uint64_t h = 0x9E3779B97F4A7C15ULL * (g + 1);
+                bool done = false;
+                for (unsigned k = 0; k <= catalysts[s].maxDisappear && !done; k++) {
+                  probe.Advance(la);
+                  if (catalysts[s].period > 1)
+                    cat.Step();
+                  const LifeState &pn = traj.At(la.gen);
+                  row_t cols = probe.parent ? probe.diff | NonEmptyColumns(cat.state) : ROW_ALL;
+                  for (; cols; cols &= cols - 1) {
+                    int i = RowCtz(cols);
+                    row_t v = la.state[i] ^ cat.state[i] ^ pn.state[i];
+                    if (!v)
+                      continue;
+                    h ^= (uint64_t)(i + 1) * 0xD6E8FEB86659FD93ULL;
+                    for (; v; v >>= 32, v >>= 32) {
+                      h ^= (uint64_t)v;
+                      h *= 0x9E3779B97F4A7C15ULL;
+                      h ^= h >> 29;
+                    }
+                  }
+                  done = shiftedTargets[config.count].MatchedBy(la) || la.gen + 1 >= params.maxGen;
+                }
+                perturbationKnown = done;
+                perturbationKey = h;
               }
               if (catalysts[s].checkRecovery || soloFail) {
                 LifeState lookahead = newConfig.state;
@@ -4039,6 +4164,16 @@ public:
                   newPlacements.Erase(newPlacement.first, newPlacement.second);
                   continue;
                 }
+              }
+
+              // unique-recovery: an earlier placement at this node (any catalyst) already
+              // disturbed the reaction in exactly the same way; its subtree covers this one
+              // except for later sparks that hit the two catalysts differently.
+              if (perturbationKnown && !seenPerturbations.insert(perturbationKey).second) {
+                perturbationDuplicates++;
+                masks[s].Set(newPlacement.first, newPlacement.second);
+                newPlacements.Erase(newPlacement.first, newPlacement.second);
+                continue;
               }
 
               if (config.count == rootCount && tlsPart == 0 && params.verbose) {
@@ -4121,6 +4256,8 @@ public:
         // history |= config.state;
         advance();
       }
+      if (params.oscMax > 0)
+        recent[config.state.gen % recent.size()] = config.state;
       // (a leaf only looks at the catalysts-only state for required/antirequired cells)
       if (config.catalystsStill || (isLeaf && !checkRequired))
         config.catalystsState.gen++; // fixed point, or not needed: stepping would change nothing
@@ -4161,8 +4298,121 @@ public:
     if (!failure)
       failuretime = filterMaxGen;
 
+    if (params.oscMax > 0 && !failure && config.count > rootCount && !stopFlag)
+      CheckOscillator(config, recent, nodeStartGen);
+
     if (success)
       ReportSolution(config, successtime, failuretime);
+  }
+
+  // Every catalyst touching `osc` (period q) is complete in some generation of it.
+  bool CatalystsIntactIn(const Configuration &conf, const LifeState &osc, unsigned q) const {
+    for (unsigned j = 0; j < conf.count; j++) {
+      const CatalystData &c = catalysts[conf.curs[j]];
+      LifeState placed = c.state;
+      placed.Move(conf.curx[j], conf.cury[j]);
+      LifeState cat;
+      cat.JoinWSymChain(placed, params.symmetryChain);
+      bool touches = false, intact = false;
+      for (unsigned m = 0; m < c.period && !intact; m++, cat.Step()) {
+        touches |= !cat.AreDisjoint(osc.BigZOI());
+        LifeState ph = osc;
+        for (unsigned k = 0; k < q && !intact; k++, ph.Step())
+          intact = (cat & ~ph).IsEmpty();
+      }
+      if (touches && !intact)
+        return false;
+    }
+    return true;
+  }
+
+  // find-oscillators: if the whole board is periodic where this node stopped, split it into
+  // separate oscillating parts and keep the parts that contain a catalyst, oscillate with a
+  // period in range, and stop oscillating without their catalysts. Each one is kept once,
+  // whatever its phase, position or orientation.
+  // `recent` holds the node's states from generation startGen on (see RecursiveSearch).
+  void CheckOscillator(const Configuration &conf, const std::vector<LifeState> &recent, unsigned startGen) {
+    const LifeState &s0 = conf.state;
+    const unsigned M = recent.size();
+    // (a full period must have been seen since the node's last placement)
+    unsigned p = 0;
+    for (unsigned k = 1; k <= params.oscMax && k <= s0.gen - startGen && !p; k++)
+      if (recent[(s0.gen - k) % M] == s0)
+        p = k;
+    if (p == 0 || p < params.oscMin)
+      return;
+    LifeState envelope = s0, rotor, t = s0;
+    for (unsigned k = 0; k < p; k++) {
+      LifeState prev = t;
+      t.Step();
+      rotor |= prev ^ t;
+      envelope |= t;
+    }
+
+    const unsigned P = CatalystPeriodLcm(catalysts, conf);
+    LifeState cats = conf.startingCatalysts, catEnvelope;
+    cats.Step(s0.gen % P);
+    LifeState c = conf.startingCatalysts;
+    for (unsigned k = 0; k < P; k++, c.Step())
+      catEnvelope |= c;
+    while (!rotor.IsEmpty()) {
+      // the part: live cells (in any phase) within 2 cells of each other, from one rotor cell
+      auto seed = rotor.FirstOn();
+      LifeState part;
+      part.Set(seed.first, seed.second);
+      for (;;) {
+        LifeState grown = part.BigZOI() & envelope;
+        if (grown == part)
+          break;
+        part = grown;
+      }
+      rotor &= ~part;
+      const LifeState osc = s0 & part;
+      if (osc.AreDisjoint(cats))
+        continue; // no catalyst in it
+      unsigned q = 0;
+      LifeState u = osc;
+      for (unsigned k = 1; k <= p; k++) {
+        u.Step();
+        if (u == osc) {
+          q = k;
+          break;
+        }
+      }
+      if (q == 0 || q < params.oscMin)
+        continue; // not a separate oscillator (it interacts with the rest), or period too short
+      const LifeState rest = osc & ~catEnvelope;
+      if (rest.IsEmpty())
+        continue; // only catalysts (an oscillating catalyst)
+      LifeState r = rest;
+      r.Step(q);
+      if (r == rest)
+        continue; // oscillates (or is still) without the catalysts too
+      if (!CatalystsIntactIn(conf, osc, q))
+        continue; // its "catalyst" cells are debris of a destroyed catalyst
+
+      uint64_t key = ~0ULL;
+      LifeState ph = osc;
+      for (unsigned k = 0; k < q; k++, ph.Step())
+        for (SymmetryTransform tr : {Identity, ReflectAcrossX, ReflectAcrossY, Rotate90, Rotate270,
+                                     Rotate180OddBoth, ReflectAcrossYeqX, ReflectAcrossYeqNegX}) {
+          LifeState v = ph;
+          v.Transform(tr);
+          row_t ys = 0;
+          for (int i = 0; i < N; i++)
+            ys |= v.state[i];
+          int x0 = CircularLeftEdge(NonEmptyColumns(v.state)), y0 = CircularLeftEdge(ys);
+          v.Move(x0 < 0 ? 0 : -x0, y0 < 0 ? 0 : -y0);
+          key = std::min(key, MixState(0, v));
+        }
+
+      std::string desc = DescribeSolution(conf, s0.gen);
+      desc = "period " + std::to_string(q) + ", " + std::to_string(osc.GetPop()) + " cells, made by gen " +
+             std::to_string(s0.gen) + desc.substr(desc.find(" |") == std::string::npos ? desc.size() : desc.find(" |"));
+      std::lock_guard<std::mutex> lk(mtx);
+      if (oscKeys.insert(key).second)
+        oscillators.push_back({osc, desc});
+    }
   }
 };
 
@@ -4453,6 +4703,12 @@ int main(int argc, char *argv[]) {
     printf("Placements/solutions where catalysts (or their symmetric images) touched each other (%s): %u\n",
            searcher.params.keepInteracting ? "kept, keep-interacting is on" : "rejected",
            searcher.interactingRejected.load());
+  if (searcher.perturbationDuplicates > 0)
+    printf("Placements skipped by unique-recovery (same perturbation as an earlier one): %llu\n",
+           searcher.perturbationDuplicates.load());
+  if (searcher.params.oscMax > 0)
+    printf("Catalysed oscillators found: %zu (in %s)\n", searcher.oscillators.size(),
+           AddSuffix(searcher.params.outputFile, "_osc").c_str());
   if (searcher.edgeFlagged > 0)
     printf("Solutions reaching the torus edge (marked in output-list; \"torus-edge drop\" removes them, \"torus 128\" gives more room): %u\n",
            searcher.edgeFlagged.load());

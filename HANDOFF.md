@@ -133,6 +133,24 @@ Engine changes (not visible in the input format):
   (a) no goal/filter, (b) every `cat` used symmetry `.` (one orientation only), (c) num-catalyst
   means exactly N, (d) max-active 100. Corrected file in `user_files/search_fixed.txt`.
 
+- 2026-10-18, ideas taken from LocalForce (Lightcone author's oscillator searcher; zips
+  LocalForce-main/periodic/spaceship in the parent folder). Its other speed ideas were already
+  here (filters = lightcone, check-recovery = contact-filter, exact one-step interaction test).
+  * `unique-recovery yes` (unsafe): per search node, a placement whose board-minus-catalyst
+    history until the catalyst is back (or max-gen) equals an earlier placement's is skipped.
+    Hash over the columns that differ from the node's own trajectory (probe Trajectory).
+    Only for non-last catalysts (leaf skips saved nothing and lost results).
+    intb 3-cat 65 s -> 1.3 s (857/1388 outcomes kept); 3q4i 2-cat same time, 350/350 outcomes.
+  * `find-oscillators yes|max|min-max` -> `<output>_osc.rle`: board periodic at a non-failed
+    node end (compared with the node's last oscMax states, kept in a ring), split into parts by
+    distance-2 flood over the envelope from rotor cells; kept if it contains a catalyst intact in
+    some phase, has a period in range, and the part minus all catalyst phases is not periodic.
+    Deduped over phases/8 orientations/translation. +22% time on 3q4i; 15 found there,
+    verified periodic in Python (`diag/lib.py`). Not in --merge/.cfdata; no generator fields
+    (use the generator's "Extra lines" box).
+  * Seen while testing (pre-existing, not changed): with many threads the number of output rows
+    (categories) can vary by a few between runs; the solution lists are identical.
+
 ## 5. The generator (catforce_in_generator.html)
 
 Built from three pieces in `generator/src/`:

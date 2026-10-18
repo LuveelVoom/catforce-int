@@ -68,6 +68,8 @@ denote optional parameters.
 | `lightcone-tight`     | `yes`                    | Unsafe, faster: aim lightcone only at the mismatched cells at failure time (may lose results) |
 | `resume-from`         | `n`                      | Skip the first n top-level placements (printed when a run is stopped; also saved to <input>.resume) |
 | `contact-filter`      | `yes`                    | Skip placements where the new catalyst, with no further catalysts, never comes back within max-active gens (much faster; may lose results needing a rescue) |
+| `unique-recovery`     | `yes`                    | Unsafe, faster with 3+ catalysts: of placements that disturb the reaction identically until the catalyst is back, search only the first (may lose results; see below) |
+| `find-oscillators`    | `yes`, `max` or `min-max` | Also collect catalysed oscillators (periods 3-60 for `yes`) into `<output>_osc.rle` (see below) |
 | `split-level`         | `2`                      | Threads share out second-catalyst placements instead of first ones (better balance on many cores with few first placements; duplicates first-level work) |
 | `output-list`         | `file`                   | Text list of every solution: catalyst shapes and positions              |
 | `spaceship-cutoff`    | `n` or `off`             | Don't place catalysts for spaceships more than `n` cells from the rest of the reaction (default 10; see below) |
@@ -338,6 +340,34 @@ wrapped around, which cannot happen on the plane. By default such results are
 kept and marked `REACHES THE TORUS EDGE` in the `output-list` file, and the
 count is printed at the end; `torus-edge drop` removes them, `torus-edge off`
 skips the check. `torus 128` gives more room.
+
+**Unique recovery (`unique-recovery yes`)**: idea from LocalForce's
+`checkRecoveryRequireUnique`. When a catalyst is placed, the board minus that
+catalyst is followed (with no further catalysts) until the catalyst is back, or
+until max-gen. If an earlier placement at the same point of the search (same
+catalysts already placed, any catalyst type or position) gave exactly the same
+cells in every one of those generations, the new placement is skipped: its search
+would repeat the earlier one. What is lost: results where a later spark hits the
+two catalysts differently, and the variants that differ only in which catalyst
+does the job. Only placements that will get further catalysts are checked (for
+the last catalyst a skip saves about as much time as the check costs). Measured:
+3-catalyst `tests/intb.in` 65 s -> 1.3 s, keeping 857 of 1388 distinct outcomes;
+2-catalyst `user_files/3q4i.txt` same time, all 350 outcomes kept (827 of 976
+solutions). It can be combined with `contact-filter`.
+
+**Catalysed oscillators (`find-oscillators`)**: idea from LocalForce. Wherever a
+branch of the search stops without a catalyst failing, the board is checked for
+periodicity over the generations since its last placement (so a full period must
+fit before max-gen). A periodic board is split into separate oscillating parts;
+a part is kept if it contains a catalyst that is complete in some phase, has a
+period in range, and does not oscillate (or stay still) without its catalysts.
+Each oscillator is stored once, whatever its phase, position or orientation, in
+`<output>_osc.rle`: one square per oscillator, with a `#C` line giving its
+period, size, and the catalysts and positions of the search result that made it.
+The search itself and its other outputs are unchanged. Cost: about +20% time on
+`user_files/3q4i.txt`. A natural oscillator that happens to include a
+catalyst's cells is not recognised as natural; check each find. Not part of
+`--merge`.
 
 Layout files
 ---
