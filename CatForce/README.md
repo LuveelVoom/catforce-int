@@ -168,6 +168,13 @@ unchanged; the saving is largest when `max-gen` is not much bigger than
 `stable-interval` (measured on a B3/S23-q4i search: 2.7x at max-gen 30, 1.5x at
 45, 1.2x at 60, with stable-interval 15).
 
+**Hopeless branches are dropped**: once a catalyst is seen missing so late that
+it can no longer stay recovered for `stable-interval` generations before
+`max-gen` (or a bait can no longer survive long enough), that configuration and
+everything that would be placed after it are abandoned. Results are unchanged;
+it matters most with a large `max-active` (e.g. 100), where nothing else ends
+these branches early.
+
 **Console output**: by default the program prints one status line per second
 (every 10 seconds after the first minute): results so far, elapsed time, and
 how far the first-catalyst loop has got, e.g. `first catalyst at gen 12 of

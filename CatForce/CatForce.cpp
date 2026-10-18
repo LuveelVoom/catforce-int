@@ -1700,6 +1700,72 @@ std::vector<CatalystData> CatalystData::FromInput(CatalystInput &input) {
   return results;
 }
 
+// How a search node's state evolves if no further catalyst is placed. A child
+// node differs from its parent only in the columns its new catalyst has
+// influenced (at most one more column on each side per generation), so it
+// steps only those columns and takes the others from the parent's trajectory.
+// After each step the set is narrowed to the columns that really differ; once
+// it covers most of the pattern, plain stepping is cheaper and is used instead.
+struct Trajectory {
+  Trajectory *parent = nullptr;
+  row_t diff = 0;       // columns where the current state may differ from the parent's
+  unsigned start = 0;   // generation of states[0] (nodes that store their states)
+  unsigned limit = 0;   // the trajectory is available up to this generation
+  std::vector<LifeState> states;
+  std::vector<row_t> changed; // changed[k]: columns of states[k] that differ from states[k - 1]
+
+  const LifeState &At(unsigned gen) {
+    while (start + states.size() <= gen) {
+      LifeState n = states.back();
+      Advance(n);
+      row_t ch = 0;
+      const LifeState &prev = states.back();
+      for (int i = 0; i < N; i++)
+        ch |= (row_t)(n.state[i] != prev.state[i]) << i;
+      states.push_back(n);
+      changed.push_back(ch);
+    }
+    return states[gen - start];
+  }
+
+  // `cur` (this node's state at generation t) -> generation t + 1, in place
+  void Advance(LifeState &cur) {
+    const unsigned t = cur.gen;
+    if (parent && t + 1 <= parent->limit) {
+      const row_t cone = diff | RotateLeft(diff) | RotateRight(diff);
+      const row_t nz = NonEmptyColumns(cur.state);
+      const row_t active = nz | RotateLeft(nz) | RotateRight(nz);
+      const row_t live = cone & active;
+      if (10 * RowPop(live) <= 9 * RowPop(active)) {
+        const LifeState &pn = parent->At(t + 1);
+        const row_t pch = parent->changed[t + 1 - parent->start];
+        row_t buf[N];
+        cur.StepColumnsInto(live, buf);
+        for (row_t b = pch & ~cone; b; b &= b - 1) {
+          int i = RowCtz(b);
+          cur.state[i] = pn.state[i];
+        }
+        row_t nd = 0;
+        for (row_t b = cone; b; b &= b - 1) {
+          int i = RowCtz(b);
+          row_t v = ((live >> i) & 1) ? buf[i] : 0;
+          cur.state[i] = v;
+          nd |= (row_t)(v != pn.state[i]) << i;
+        }
+        diff = nd;
+        cur.gen = t + 1;
+        cur.min = 0;
+        cur.max = N - 1;
+        return;
+      }
+      parent = nullptr; // from here on the difference is too large to be worth it
+    }
+    cur.Step();
+    cur.min = 0;
+    cur.max = N - 1;
+  }
+};
+
 struct Configuration {
   unsigned count;
   unsigned transparentCount;
@@ -3224,7 +3290,7 @@ public:
       std::vector<TargetSet> shiftedTargets = baseTargets;
       Configuration myConfig = config;
       RecursiveSearch(myConfig, myConfig.state, required, antirequired, std::move(myMasks), shiftedTargets,
-                      std::array<unsigned, MAX_CATALYSTS>(), std::array<unsigned, MAX_CATALYSTS>());
+                      std::array<unsigned, MAX_CATALYSTS>(), std::array<unsigned, MAX_CATALYSTS>(), nullptr, 0);
       if (!stopFlag) gCurRoot[part] = ~0UL; // this thread finished all its share
     };
 
@@ -3291,7 +3357,26 @@ public:
                   std::vector<TargetSet> &shiftedTargets, // This can be shared
 
                   std::array<unsigned, MAX_CATALYSTS> missingTime,
-                  std::array<unsigned, MAX_CATALYSTS> recoveredTime) {
+                  std::array<unsigned, MAX_CATALYSTS> recoveredTime,
+                  Trajectory *parentTraj, row_t diffCols) {
+    // This node's own evolution: stored if it can have children (they read it),
+    // otherwise only stepped forward.
+    const bool isLeaf = config.count == totalCats;
+    Trajectory traj;
+    traj.parent = parentTraj;
+    traj.diff = diffCols;
+    traj.start = config.state.gen;
+    traj.limit = params.maxGen;
+    if (!isLeaf) {
+      traj.states.push_back(config.state);
+      traj.changed.push_back(0);
+    }
+    auto advance = [&]() {
+      if (isLeaf)
+        traj.Advance(config.state);
+      else
+        config.state = traj.At(config.state.gen + 1);
+    };
     bool success = false;
     bool failure = false;
 
@@ -3307,9 +3392,10 @@ public:
     int lcF = -1;
     LifeState lcP;
     if (params.lightcone && config.count > 0 && config.count < totalCats) {
-      LifeState st = config.state, cs = config.catalystsState;
+      LifeState cs = config.catalystsState;
       auto miss = missingTime;
-      for (unsigned g2 = st.gen; g2 < params.maxGen && lcF < 0; g2++, st.Step(), checkRequired ? cs.Step() : void()) {
+      for (unsigned g2 = config.state.gen; g2 < params.maxGen && lcF < 0; g2++, checkRequired ? cs.Step() : void()) {
+        const LifeState &st = traj.At(g2);
         if (checkRequired) {
           if (!(((st ^ (cs | alsoRequired)) & requiredMask).IsEmpty()) || !st.AreDisjoint(antirequired)) {
             lcF = g2; lcP = requiredMask | antirequired; break;
@@ -3386,6 +3472,26 @@ public:
         break;
       }
 
+      // Too late: a catalyst that is missing now needs ceil(stable-interval / period)
+      // more checks in a row, and a bait that is missing needs `survive` more
+      // generations, before generation max-gen - 1. If that no longer fits, no
+      // result can come from here (or from catalysts placed later), so stop.
+      if (!success) {
+        bool tooLate = false;
+        for (unsigned i = 0; i < config.count && !tooLate; i++) {
+          const CatalystData &c = catalysts[config.curs[i]];
+          if (c.sacrificial || missingTime[i] == 0 || g % c.period != 0)
+            continue;
+          const unsigned need = (params.stableInterval + c.period - 1) / c.period * c.period;
+          tooLate = g + need > params.maxGen - 1;
+        }
+        for (unsigned b = 0; b < baitTargets.size() && !tooLate; b++)
+          tooLate = config.baitStreak[b] == 0 && g + baitSurvive[b] > params.maxGen - 1;
+        if (tooLate)
+          break;
+      }
+
+
       // Catalysts are still missing here but none can be placed in time any
       // more, so nothing below this point of the search can succeed.
       if (config.count != totalCats && (int)g > latestPlacementGenAny)
@@ -3393,8 +3499,7 @@ public:
 
       // Try adding a catalyst
       if (config.state.gen >= params.startGen && config.count != totalCats) {
-        LifeState next = config.state;
-        next.Step();
+        const LifeState next = traj.At(config.state.gen + 1);
 
         LifeState activePart = (~history).ZOI() & config.state & ~config.catalystsState;
 
@@ -3699,7 +3804,7 @@ public:
 
               if (myShare) {
                 RecursiveSearch(newConfig, history, newRequiredMask, newAntirequired, std::move(newMasks),
-                                shiftedTargets, missingTime, recoveredTime);
+                                shiftedTargets, missingTime, recoveredTime, &traj, catCols);
                 if (config.count == rootCount) {
                   rootPlacementsDone++;
                   MaybeReport();
@@ -3716,7 +3821,7 @@ public:
       } else {
         // No need to update history, not used for anything
         // history |= config.state;
-        config.state.Step();
+        advance();
       }
       if (config.catalystsStill)
         config.catalystsState.gen++; // fixed point: stepping would change nothing

@@ -92,6 +92,21 @@ Engine changes (not visible in the input format):
 - Manual loci on 3q4i-3 (2-cat test): 190 s → 24 s but lost 4 of 8 results.
   `contact-filter yes` beat that (10.5 s, nothing lost).
 - `max-active 100 → 20` gave ~40% time cut with identical results in an earlier test.
+- Speed work (2026-10-17), results identical everywhere (suite, 2- and 3-catalyst checks):
+  * Trajectories: each search node keeps its "no more catalysts" evolution; a child steps only
+    the columns where it differs from its parent (narrowed every generation) and copies the rest
+    in place. Falls back to full stepping when the difference covers >90% of live columns.
+  * Too-late cutoff: a catalyst missing at a check generation g with g + ceil(S/p)*p > max-gen-1
+    (S = stable-interval, p = period), or a missing bait with g + survive > max-gen-1, ends the
+    branch (all descendants too).
+  * Single-thread timings: HighLife max-active-20 search 10.2 s -> 5.7 s; 3q4i max-gen 100
+    (max-active 100) 15.9 s -> ~12.7 s; 3q4i max-gen 35 15.9 s -> 6.3 s; 3-cat INT test 1.84 -> 0.78 s.
+  * Profile before: ~60% of time was stepping leaf configurations (all catalysts placed).
+  * Rejected: "board settled (period 1/2) with a catalyst missing" cutoff — fires often but the
+    skipped generations were already nearly free under trajectories, and the per-gen hash cost
+    more; skipping zero-init of temporaries / Move+Join scratch arrays — within noise.
+  * Remaining profile (3q4i max-gen 100): ~37% full steps in leaves whose disturbance spread
+    widely, 15% search bookkeeping, 12% column-limited steps, 6% each Convolve / MatchedBy.
 - Things tried and rejected (no gain): passing masks by reference, PGO, break-after-success,
   dead-end pruning, incremental StepDirty, smaller lookup tables, memo caches,
   "remember single-catalyst outcomes" (no correct cheap version exists).
