@@ -1,0 +1,2 @@
+# layout test: keyword file that pulls in layout.rle (pattern + one keep-empty cell + keywords after the RLE)
+layout layout.rle

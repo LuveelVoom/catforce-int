@@ -62,6 +62,12 @@ Input-file keywords (all documented in README.md):
   `unsigned __int128`, type `row_t` in LifeAPI.h). ~2.6-3.5x slower, identical suite results.
 - Goal searches (any filter/match) also write `<output>_history.rle` in `[rule]History`
   (start pattern state 3, catalysts 1, goal cells 4).
+- Layout files (`.rle`, multi-state, LifeHistory states; README "Layout files"): drawn roles
+  1 pat, 2 catalyst-zone, 3 bait, 4 goal, 5 fixed-cat, 6 keep-empty, remappable with `legend`;
+  `#C` keyword lines; `#CXRLE Pos` positions. `LayoutToLines` in CatForce.cpp turns a layout
+  into keyword lines; the generator has a JS port (`layoutToLines`); both checked equal.
+- `fixed-cat`, `catalyst-zone`, `no-catalyst-zone`, `keep-empty`, `torus-edge flag|drop|off`,
+  filter ranges ending in `max`, `<<` RLE blocks, end-of-line `#` comments, `--show-input`.
 - `split-level 2` — threads share second-level placements (helps many cores + few roots; slower on 2 cores).
 - Catalyst options per `cat` line: `forbidden`, `required`, `antirequired`, `locus rle x y`,
   `mustinclude`, `transparent`, `check-recovery`, `sacrificial`, `period n`, `isblinker`
@@ -113,8 +119,11 @@ locus picker on thumbnails, goals/filters, search size with drag-to-add regions 
 no goal, etc. Draft is saved in browser storage. It was also published as a claude.ai artifact on
 the old account; on a new account, publish `catforce_in_generator.html` again if wanted.
 
-Not yet in the generator UI: `contact-filter`, `lightcone`, `lightcone-tight`, `resume-from`,
-`split-level`, `unique-output` (they can be added by hand to the .in file).
+Generator now also has: torus size, spaceship-cutoff, torus-edge, contact-filter, lightcone,
+unique-output, resume-from, split-level, fixed catalysts (+ import from an output-list line or a
+result RLE), layout import/export, and an "Extra lines" box for keywords without a field.
+`build.py` writes `generator/catforce_in_generator.html`; copy it to `CatForce/` too.
+Page logic can be tested headless with jsdom (stub canvas getContext and clipboard).
 
 ## 6. Where things stood at the end
 

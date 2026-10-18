@@ -70,6 +70,13 @@ denote optional parameters.
 | `output-list`         | `file`                   | Text list of every solution: catalyst shapes and positions              |
 | `spaceship-cutoff`    | `n` or `off`             | Don't place catalysts for spaceships more than `n` cells from the rest of the reaction (default 10; see below) |
 | `torus`               | `64` or `128`            | Torus size (default 64). `128` runs `CatForce128`, built automatically on first use (see below) |
+| `fixed-cat`           | `rle x y max-active [cat options]` | A catalyst already in place (e.g. from an earlier result); see below |
+| `catalyst-zone`       | `rle x y`                | Catalysts must lie entirely inside these cells; may be repeated (union) |
+| `no-catalyst-zone`    | `rle x y`                | No catalyst cell may lie on these cells; may be repeated            |
+| `keep-empty`          | `rle x y`                | These cells must stay dead in every generation; may be repeated     |
+| `torus-edge`          | `flag`, `drop` or `off`  | Results whose reaction reaches the torus edge: marked (default), dropped, or not checked |
+| `layout`              | `file.rle [x y]`         | Read a layout file (see **Layout files**) here                          |
+| `legend`              | `4=goal:20-max ...`      | Change what layout states mean (for `layout` lines in this file)       |
 | `include`             | `file`                   | Insert the lines of another file here (e.g. a catalyst list)            |
 | `fit-in-width-height` | `w h`                    | Only allow solutions where all catalysts fit in a `w` by `h` rectangle  |
 | `also-required`       | `rle x y`                | Require `rle` to be present in every generation                         |
@@ -147,7 +154,7 @@ end summary. With a global `symmetry`, placements whose images would overlap or
 touch the catalysts already placed are also skipped as soon as they are tried.
 `keep-interacting yes` turns both off.
 
-**Command line**: `./CatForce file.in [--check] [--threads N] [--max-time T]
+**Command line**: `./CatForce file.in [--check] [--show-input] [--threads N] [--max-time T]
 [--max-results N] [--part K/N] [--verbose] [--compile-rule]`. `--check` parses the file, prints a
 summary (rule, symmetry, pattern, number of catalysts and placements, search
 positions, output files) and exits without searching; the other options
@@ -251,6 +258,103 @@ already-found one, when the active pattern (with any baits and
 `also-required` cells) has that symmetry about *any* centre and the rule is
 isotropic. The number removed is printed at the end. Add
 `keep-duplicates yes` to keep everything.
+
+**Writing input files**:
+- `#` after a space starts a comment, also at the end of a line: `num-catalyst 2  # two`.
+- `<<` in place of any RLE takes the RLE from the following lines, up to its `!`,
+  exactly as Golly copies it (the `x = ...` header and `#` lines are skipped,
+  line breaks are fine). The RLE keeps its own top-left corner, so offsets mean
+  the same as on one line:
+
+      pat << -3 -2
+      x = 3, y = 4, rule = B3/S23
+      o$3o$obo$
+      2bo!
+
+- A filter range may end in `max` (= `max-gen` − 1): `andfilter 20-max 2o$2o! 5 5`.
+- `./CatForce file --show-input` prints the plain keyword lines a file amounts to
+  (layouts and `<<` blocks expanded) and exits.
+
+**Fixed catalysts (`fixed-cat`)**: `fixed-cat <rle> <x> <y> <max-active> [options]`
+puts a catalyst in place before the search starts, with its top-left corner at
+(x, y). It must recover like any other catalyst (the same `cat` options work:
+`period`, `isblinker`, `required`, `forbidden`, ...), but it is not searched for
+and does not count towards `num-catalyst`. Use it to search in stages: take a
+result, fix its catalysts, and search for one more. Searched plus fixed
+catalysts may be at most 8. The output list marks them `fixed-cat [...]`.
+(Checked: fixing one catalyst of a 2-catalyst search and searching for 1 gives
+exactly the 2-catalyst results that contain it.) The generator page can make
+these lines from a pasted result.
+
+**Torus edge (`torus-edge`)**: a result whose reaction (everything it touches
+in its first `max-gen` + 14 generations) reaches the edge of the torus may have
+wrapped around, which cannot happen on the plane. By default such results are
+kept and marked `REACHES THE TORUS EDGE` in the `output-list` file, and the
+count is printed at the end; `torus-edge drop` removes them, `torus-edge off`
+skips the check. `torus 128` gives more room.
+
+Layout files
+---
+
+A layout describes the geometry of a search as a picture: a multi-state RLE in
+which each cell's state says what the cell is. Using LifeHistory states, you can
+draw and edit it in Golly (rule `<your rule>History`, e.g. `B3/S23-q4iHistory`),
+and the whole search (settings included) can live in one file that Golly opens
+and CatForce runs directly:
+
+    ./CatForce search.rle
+
+Any file ending in `.rle`, or whose first line (after `#` lines) is an RLE
+header, is read as a layout. A keyword file can also pull one in with
+`layout file.rle [x y]`.
+
+**What the states mean** (defaults; LifeHistory colours in brackets):
+
+| State | Role | Becomes |
+|---|---|---|
+| 1 (green) | `pat`: the active pattern | one `pat` line |
+| 2 (blue) | `zone`: catalysts must lie entirely inside these cells | `catalyst-zone` |
+| 3 (white) | `bait`: each separate object is one bait | `bait` lines |
+| 4 (red) | `goal`: each separate object must appear at exactly this spot | `andfilter 1-max ...` lines |
+| 5 | `fixed`: each separate object is a catalyst already in place | `fixed-cat ... 20` lines |
+| 6 | `keep-empty`: must stay dead in every generation | `keep-empty` |
+
+With a zone and no `search-area` line, the whole torus is searched and the zone
+alone limits where catalysts go; with both, both apply.
+
+Odd states are alive at generation 0 and even states are dead, as in
+LifeHistory, so the pattern, baits and fixed catalysts are drawn in live states
+and the zone, goal and keep-empty cells in dead ones. "Separate objects" are
+8-connected groups of cells of that state.
+
+**Legend**: a `#C legend` line in the file (or a `legend` line in the keyword
+file that has the `layout` line) changes the meaning of states, and gives roles
+their options:
+
+    #C legend 4=goal:30-max 5=fixed:15 3=bait:20:2 7=required 8=exclude 9=ignore
+
+Roles: `pat`, `zone`, `exclude` (no catalyst cell may lie here), `bait[:survive[:absent]]`,
+`required` (always alive, `also-required`), `fixed[:max-active[:cat options]]`,
+`goal[:generations]` (default `1-max`), `keep-empty`, `ignore`. States up to 24
+(letters A to X) can be given roles; a state that appears in the drawing with no
+role is an error, so a stray state is never silently ignored.
+
+**Settings**: `#C` lines whose first word is a CatForce keyword are read as
+keyword lines (`#C max-gen 100`, `#C cat 2o$2o! 20 -1 -1 .`, `#C include catlist`);
+other `#C` lines are ordinary comments. Plain keyword lines may also follow the
+RLE after its `!`. Keyword lines are read after the drawing, so they can add to
+it (more `bait` or `cat` lines), and a `rule` line overrides the header.
+
+**Rule**: taken from the header (`rule = B3/S23-q4iHistory` gives `B3/S23-q4i`;
+a trailing `History` or `Super` is removed), unless a `rule` line is given.
+
+**Position**: the layout's top-left cell goes to the `#CXRLE Pos=x,y` that Golly
+writes (so coordinates match Golly's), else to the `x y` of the `layout` line,
+else the layout is centred on (0, 0). The first line of `--show-input` says where
+it went. It must fit on the torus (use `torus 128` for big layouts).
+
+`examples/layout_example.rle` is a small complete example, and the generator
+page can save the current search as a layout.
 
 **Escaped spaceships (`spaceship-cutoff`)**: a spaceship that has left the
 reaction (more than `n` cells from every other non-catalyst cell, with the

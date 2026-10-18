@@ -186,8 +186,8 @@ details.more > .body { display: flex; flex-direction: column; gap: 12px; }
 </div>
 
 <section id="openPanel" class="step" hidden>
-  <header><span class="num">↥</span><div><h2>Open an existing file</h2><p>Choose a file, or paste its text (a whole .in file, or just some <code>cat</code> lines from a catalyst list).</p></div></header>
-  <input type="file" id="importFile" accept=".in,.txt,text/plain">
+  <header><span class="num">↥</span><div><h2>Open an existing file</h2><p>Choose a file, or paste its text: a whole .in file, a CatForce layout (<code>.rle</code>), or just some <code>cat</code> lines from a catalyst list.</p></div></header>
+  <input type="file" id="importFile" accept=".in,.txt,.rle,text/plain">
   <textarea id="importBox" rows="6" spellcheck="false" placeholder="rule B3/S23&#10;max-gen 100&#10;pat ...&#10;cat 2o$2o! 20 -1 -1 ."></textarea>
   <div class="btnrow">
     <button id="importAll" class="primary">Replace the form with this file</button>
@@ -236,7 +236,7 @@ details.more > .body { display: flex; flex-direction: column; gap: 12px; }
           <label class="fld"><span class="lbl">x</span><input type="text" id="f-patDx" data-k="patDx" inputmode="numeric" placeholder="0"></label>
           <label class="fld"><span class="lbl">y</span><input type="text" id="f-patDy" data-k="patDy" inputmode="numeric" placeholder="0"></label>
         </div>
-        <small class="hint">x, y is the top-left corner on the 64×64 torus: (0,0) is the centre, x grows to the right, y grows downwards.</small>
+        <small class="hint">x, y is the top-left corner on the torus (64×64 unless set in step 5): (0,0) is the centre, x grows to the right, y grows downwards.</small>
         <h3>Baits <span class="opt">must be disturbed, then reappear intact and survive</span></h3>
         <div id="baits" class="list"></div>
         <div class="btnrow"><button id="addBait" class="small">Add a bait</button></div>
@@ -258,6 +258,16 @@ details.more > .body { display: flex; flex-direction: column; gap: 12px; }
     <div class="btnrow"><button id="catPasteGo">Add pasted catalysts</button><span id="catPasteMsg" class="msg"></span></div>
     <div id="orientFix" class="callout tip" hidden></div>
     <div id="cats" class="list"></div>
+    <div>
+      <h3 style="margin-bottom:4px">Already placed <span class="opt"><code>fixed-cat</code>: catalysts kept from an earlier result. They must recover like the others, and the search adds "Catalysts per result" more.</span></h3>
+    </div>
+    <div id="fixed" class="list"></div>
+    <div class="btnrow"><button id="addFixed" class="small">Add a fixed catalyst</button></div>
+    <label class="fld"><span class="lbl">Or take them from a result</span>
+      <textarea id="resultPaste" rows="2" spellcheck="false" placeholder="A line of the output-list file, or one result copied from the results .rle in Golly"></textarea>
+      <small>Every catalyst of that result becomes a fixed catalyst. An RLE is lined up with the active pattern, so paste one result exactly as it starts.</small>
+    </label>
+    <div class="btnrow"><button id="resultGo">Use its catalysts as fixed</button><span id="resultMsg" class="msg"></span></div>
   </section>
 
   <!-- 4. Goal -->
@@ -281,6 +291,13 @@ details.more > .body { display: flex; flex-direction: column; gap: 12px; }
   <section class="step" id="s-size">
     <header><span class="num">5</span><div><h2>Search size</h2><p>These decide how long the search takes. Empty boxes use CatForce's defaults, shown in grey.</p></div></header>
     <div class="fields" id="sizeFields"></div>
+    <label class="fld"><span class="lbl">Torus size <code>torus</code></span>
+      <select id="f-torus" data-k="torus" data-re="all">
+        <option value="64">64 × 64 (default, fastest)</option>
+        <option value="128">128 × 128 (room for big areas; about 2.5–3.5× slower)</option>
+      </select>
+      <small>The board wraps around at its edges. CatForce runs its 128 version itself (built on first use).</small>
+    </label>
     <div>
       <h3 style="margin-bottom:4px">Where catalysts may go <span class="opt"><code>search-area</code> / <code>exclude-area</code></span></h3>
       <small class="hint">Rectangles x y width height on the torus (shaded on the map). Drag on the map to add one; hold Shift while dragging to exclude. Allowed = all included rectangles minus all excluded ones.</small>
@@ -290,10 +307,10 @@ details.more > .body { display: flex; flex-direction: column; gap: 12px; }
       <button id="addArea" class="small">Include a rectangle</button>
       <button id="addExclude" class="small">Exclude a rectangle</button>
       <span class="opt">Leave out a quarter:</span>
-      <button class="small" data-quad="-32 -32 32 32">top-left</button>
-      <button class="small" data-quad="0 -32 32 32">top-right</button>
-      <button class="small" data-quad="-32 0 32 32">bottom-left</button>
-      <button class="small" data-quad="0 0 32 32">bottom-right</button>
+      <button class="small" data-quad="tl">top-left</button>
+      <button class="small" data-quad="tr">top-right</button>
+      <button class="small" data-quad="bl">bottom-left</button>
+      <button class="small" data-quad="br">bottom-right</button>
     </div>
     <details class="more">
       <summary>More limits</summary>
@@ -322,7 +339,21 @@ details.more > .body { display: flex; flex-direction: column; gap: 12px; }
       <label class="check"><input type="checkbox" id="f-keepDup" data-k="keepDup"><span>Keep duplicate results <code>keep-duplicates</code><small>By default, results that are mirror images or rotations of each other are kept once.</small></span></label>
       <label class="check"><input type="checkbox" id="f-keepInteract" data-k="keepInteract"><span>Keep results whose catalysts touch each other <code>keep-interacting</code><small>Off by default: such results are usually two catalysts fused into one object.</small></span></label>
       <label class="check"><input type="checkbox" id="f-verbose" data-k="verbose"><span>Print every first-catalyst placement <code>verbose</code><small>The old, very long console output.</small></span></label>
+      <label class="check"><input type="checkbox" id="f-contactFilter" data-k="contactFilter"><span>Contact filter <code>contact-filter</code><small>Skip a catalyst that never comes back on its own within "may be missing for". Much faster; can lose results where a later catalyst rescues an earlier one.</small></span></label>
+      <label class="check"><input type="checkbox" id="f-lightconeOff" data-k="lightconeOff"><span>Turn off lightcone pruning <code>lightcone no</code><small>On by default; it mainly helps with 3 or more catalysts.</small></span></label>
     </div>
+    <label class="fld"><span class="lbl">Results that reach the torus edge <code>torus-edge</code></span>
+      <select id="f-torusEdge" data-k="torusEdge">
+        <option value="flag">Keep, marked in the output list (default)</option>
+        <option value="drop">Drop them</option>
+        <option value="off">Don't check</option>
+      </select>
+      <small>Such a reaction may wrap around the torus, which cannot happen on an infinite plane.</small>
+    </label>
+    <label class="fld"><span class="lbl">Extra lines</span>
+      <textarea id="f-extra" data-k="extra" rows="2" spellcheck="false" placeholder="keep-empty o! 10 0"></textarea>
+      <small>Copied into the file as written: anything this form has no field for, such as <code>catalyst-zone</code>, <code>no-catalyst-zone</code> or <code>keep-empty</code> (easiest to draw in a layout file).</small>
+    </label>
     <label class="fld"><span class="lbl">Include other files <code>include</code></span>
       <textarea id="f-includes" rows="2" spellcheck="false" placeholder="catlists/The_Tiny_List_of_Catalysts"></textarea>
       <small>One path per line; their lines are read as if pasted here (for example a catalyst list).</small>
@@ -333,13 +364,14 @@ details.more > .body { display: flex; flex-direction: column; gap: 12px; }
 
 <aside class="preview">
   <section class="panel">
-    <h2>Map <span class="opt">64 × 64 torus</span></h2>
+    <h2>Map <span class="opt" id="mapSize">64 × 64 torus</span></h2>
     <canvas id="map" width="384" height="384" role="img" aria-label="Map of the starting pattern and the area where catalysts may be placed"></canvas>
     <div class="legend">
       <span><i style="background:var(--cell)"></i>active pattern</span>
       <span><i style="background:var(--ghost)"></i>symmetric copy</span>
       <span><i style="background:var(--bait)"></i>bait</span>
       <span><i style="border:1.5px solid var(--warn)"></i>always present</span>
+      <span><i style="background:var(--accent)"></i>fixed catalyst</span>
       <span><i style="background:var(--area);border:1px solid var(--axis)"></i>catalyst positions</span>
     </div>
   </section>
@@ -351,6 +383,11 @@ details.more > .body { display: flex; flex-direction: column; gap: 12px; }
       <button id="copy" class="primary">Copy</button>
       <button id="save" hidden>Save file</button>
       <span id="copyMsg" class="msg"></span>
+    </div>
+    <div class="btnrow">
+      <button id="copyLayout" class="small">Copy as layout (.rle)</button>
+      <button id="saveLayout" class="small" hidden>Save layout</button>
+      <span class="opt">One Golly-readable file: pattern, baits and fixed catalysts drawn, the rest as <code>#C</code> lines. Run it directly: <code>./CatForce search.rle</code></span>
     </div>
     <ul id="issues" class="issues"></ul>
     <div class="run">
@@ -668,12 +705,14 @@ const CHAIN = {
   'D4+': ['RX', 'RY'], 'D4+even': ['RXe', 'RYe'], 'D4+|even': ['RYe', 'RX'], 'D4+-even': ['RXe', 'RY'],
   'D4x': ['D', 'AD'], 'D4xeven': ['D', 'ADe'], 'D8': ['R90', 'R180', 'D'], 'D8even': ['R90e', 'R180e', 'D']
 };
-const wrap64 = v => ((v + 32) % 64 + 64) % 64 - 32;
+// torus size (64, or 128 with "torus 128") and wrapping onto it, centre at (0,0)
+const TOR = () => S.torus === '128' ? 128 : 64;
+const wrapT = v => { const T = TOR(), h = T / 2; return ((v + h) % T + T) % T - h; };
 function symExpand(cells, sym) {
   let T = cells.map(c => [c[0], c[1]]);
   for (const h of CHAIN[sym] || []) T = T.concat(T.map(TF[h]));
   const seen = new Set(), out = [];
-  for (const [x, y] of T) { const k = wrap64(x) + ',' + wrap64(y); if (!seen.has(k)) { seen.add(k); out.push([wrap64(x), wrap64(y)]); } }
+  for (const [x, y] of T) { const k = wrapT(x) + ',' + wrapT(y); if (!seen.has(k)) { seen.add(k); out.push([wrapT(x), wrapT(y)]); } }
   return out;
 }
 
@@ -707,6 +746,12 @@ const LIB = [
   ['Aircraft carrier', '2o$o2bo$2b2o!'], ['Long ship', '2o$obo$bobo$2b2o!'], ['Mango', 'b2o$o2bo$bo2bo$2b2o!'],
   ['Blinker', '3o!'], ['Toad', 'b3o$3o!'], ['Beacon', '2o$o$3bo$2b2o!']
 ];
+const KEYWORDS = new Set(['rule', 'include', 'cat', 'max-gen', 'num-catalyst', 'num-transparent', 'stable-interval', 'pat', 'search-area',
+  'exclude-area', 'start-gen', 'last-gen', 'output', 'full-report', 'filter', 'andfilter', 'orfilter', 'match', 'fit-in-width-height',
+  'max-category-size', 'symmetry', 'also-required', 'stop-after-cats-destroyed', 'max-junk', 'keep-duplicates', 'keep-interacting',
+  'output-gap', 'bait', 'threads', 'max-time', 'max-results', 'output-list', 'verbose', 'part', 'unique-output', 'lightcone',
+  'lightcone-tight', 'resume-from', 'contact-filter', 'split-level', 'spaceship-cutoff', 'torus', 'fixed-cat', 'catalyst-zone',
+  'no-catalyst-zone', 'keep-empty', 'torus-edge', 'layout', 'legend']);
 const GOAL_CHIPS = [['Glider', 'bo$2bo$3o!'], ['Block', '2o$2o!'], ['Herschel', 'o$3o$obo$2bo!']];
 
 /* ---------- state ---------- */
@@ -717,7 +762,9 @@ function defaultState() {
     maxGen: '100', numCat: '2', stable: '15', areas: [],
     startGen: '', lastGen: '', numTransparent: '', stopAfter: '', maxCatSize: '', fitW: '', fitH: '', alsoRle: '', alsoX: '0', alsoY: '0',
     output: 'results.rle', outputList: '', fullReport: '', threads: '', maxTime: '', maxResults: '', part: '', outputGap: '',
-    includes: [], keepDup: false, keepInteract: false, verbose: false, splitGap: '6', splitMerge: false
+    includes: [], keepDup: false, keepInteract: false, verbose: false, splitGap: '6', splitMerge: false,
+    torus: '64', spaceshipCutoff: '', torusEdge: 'flag', contactFilter: false, lightconeOff: false,
+    uniqueOutput: '', resumeFrom: '', splitLevel: '', fixed: [], extra: ''
   };
 }
 function newCat() {
@@ -728,6 +775,7 @@ function newCat() {
 const newBait = () => ({rle: '', x: '0', y: '0', survive: '', absent: ''});
 const newArea = mode => ({mode, x: '', y: '', w: '', h: ''});
 const newGoal = type => ({type, gen: '', rle: '', dx: '0', dy: '0'});
+const newFixed = () => ({rle: '', x: '0', y: '0', maxActive: '20'});
 
 const SIZE_FIELDS = [
   ['maxGen', 'Generations to simulate', 'max-gen', '250', 'How long each candidate is run.'],
@@ -739,7 +787,8 @@ const LIMIT_FIELDS = [
   ['lastGen', 'First contact no later than', 'last-gen', 'max-gen − 1', ''],
   ['numTransparent', 'Transparent catalysts allowed', 'num-transparent', '100', 'Counts catalysts marked transparent.'],
   ['stopAfter', 'Give up after a catalyst breaks', 'stop-after-cats-destroyed', 'never', 'Generations to keep checking goals after a catalyst fails.'],
-  ['maxCatSize', 'Results per output row', 'max-category-size', 'no limit', 'Further results with the same outcome are dropped.']
+  ['maxCatSize', 'Results per output row', 'max-category-size', 'no limit', 'Further results with the same outcome are dropped.'],
+  ['spaceshipCutoff', 'Ignore spaceships farther than', 'spaceship-cutoff', '10', 'Cells from the rest of the reaction. No catalyst is placed for an escaped spaceship this far away ("off" to allow it).', false]
 ];
 const RUN_FIELDS = [
   ['output', 'Results file', 'output', 'results.rle', 'Open it in Golly with the same rule.', false],
@@ -749,7 +798,10 @@ const RUN_FIELDS = [
   ['maxTime', 'Time limit', 'max-time', 'none', 'Stops cleanly and saves: 90, 15m, 2h, 1d.', false],
   ['maxResults', 'Stop after this many results', 'max-results', 'no limit', '', true],
   ['part', 'Run one share of the search', 'part', 'whole search', 'K/N, e.g. 2/4 on the second of four computers.', false],
-  ['outputGap', 'Gap between results', 'output-gap', '10', 'Empty cells between results in the RLE.', true]
+  ['outputGap', 'Gap between results', 'output-gap', '10', 'Empty cells between results in the RLE.', true],
+  ['uniqueOutput', 'One square per outcome', 'unique-output', '<output>_unique.rle', 'File with the first result of each row, in a square grid.', false],
+  ['resumeFrom', 'Resume a stopped run', 'resume-from', 'from the start', 'The number a stopped run printed (also in <file>.resume).', true],
+  ['splitLevel', 'Thread sharing level', 'split-level', '1', '2 = threads share second-catalyst placements (helps many cores with few first placements).', true]
 ];
 function fieldHTML([k, label, kw, ph, help, numeric]) {
   return `<label class="fld"><span class="lbl">${esc(label)} <code>${esc(kw)}</code></span>
@@ -802,6 +854,8 @@ function build(S, forSetup) {
   const rc = checkRule(rule);
   if (!rc.ok) err('Rule: ' + rc.error);
   if (rule) L.push('rule ' + rule);
+  const T = TOR(), H = T / 2;
+  if (T !== 64) L.push('torus ' + T);
 
   num('max-gen', S.maxGen, 1); num('num-catalyst', S.numCat, 1); num('stable-interval', S.stable);
   num('start-gen', S.startGen); num('last-gen', S.lastGen); num('num-transparent', S.numTransparent);
@@ -823,7 +877,7 @@ function build(S, forSetup) {
     const n = (r.mode === 'exclude' ? 'Excluded rectangle ' : 'Search rectangle ') + (i + 1);
     if (v.some(t => !isInt(t))) { err(n + ' needs four whole numbers: x, y, width, height.'); return; }
     if (+v[2] <= 0 || +v[3] <= 0) { err(n + ': width and height must be positive.'); return; }
-    if (r.mode !== 'exclude' && (+v[0] < -32 || +v[1] < -32 || +v[0] + +v[2] > 32 || +v[1] + +v[3] > 32)) warn(n + ' reaches past the edge of the torus (−32 to 31).');
+    if (r.mode !== 'exclude' && (+v[0] < -H || +v[1] < -H || +v[0] + +v[2] > H || +v[1] + +v[3] > H)) warn(n + ' reaches past the edge of the torus (−' + H + ' to ' + (H - 1) + ').');
     L.push((r.mode === 'exclude' ? 'exclude-area ' : 'search-area ') + v.join(' '));
   });
 
@@ -851,6 +905,16 @@ function build(S, forSetup) {
     if (!isInt(S.alsoX) || !isInt(S.alsoY)) err('Always present: x and y must be whole numbers.');
     else L.push('also-required ' + also + ' ' + tr(S.alsoX) + ' ' + tr(S.alsoY));
   }
+  S.fixed.forEach((f, i) => {
+    const n = 'Fixed catalyst ' + (i + 1), rle = rleOf(f.rle, n);
+    if (!rle || rle === '!') { err(n + ' has no pattern.'); return; }
+    if (!isInt(f.x) || !isInt(f.y)) { err(n + ': x and y must be whole numbers.'); return; }
+    if (!isInt(f.maxActive) || +f.maxActive < 0) { err(n + ': "may be missing for" must be a whole number.'); return; }
+    L.push('fixed-cat ' + rle + ' ' + tr(f.x) + ' ' + tr(f.y) + ' ' + tr(f.maxActive));
+    const cls = catInfo(rle).cls;
+    if (cls && cls.type !== 'still' && cls.type !== 'osc') warn(n + ' is not stable in this rule (' + cls.label + '), so it can never recover.');
+  });
+  if (S.fixed.length && nc + S.fixed.length > 8) err('Catalysts per result plus fixed catalysts may be at most 8.');
   if (tr(S.fitW) || tr(S.fitH)) {
     if (!isInt(S.fitW) || !isInt(S.fitH)) err('Fit in width and height needs both numbers.');
     else L.push('fit-in-width-height ' + tr(S.fitW) + ' ' + tr(S.fitH));
@@ -861,12 +925,13 @@ function build(S, forSetup) {
   S.goals.forEach((f, i) => {
     const n = 'Goal ' + (i + 1), rle = rleOf(f.rle, n), gen = tr(f.gen) || defaultGoalGen();
     if (!rle) { err(n + ' has no pattern.'); return; }
-    if (!/^\d+(-\d+)?$/.test(gen)) { err(n + ': generation must be a number such as 60 or a range such as 20-150.'); return; }
+    if (!/^\d+(-(\d+|max))?$/.test(gen)) { err(n + ': generation must be a number such as 60 or a range such as 20-150 (or 20-max).'); return; }
     if (f.type === 'match') { L.push('match ' + gen + ' ' + rle); return; }
     if (!isInt(f.dx) || !isInt(f.dy)) { err(n + ': x and y must be whole numbers.'); return; }
     L.push(f.type + ' ' + gen + ' ' + rle + ' ' + tr(f.dx) + ' ' + tr(f.dy));
   });
   num('max-junk', S.maxJunk);
+  if (S.goals.length) tip('Goal searches also write ' + (tr(S.output) || 'results.rle').replace(/(\.[^.\/]*)?$/, '_history$1') + ': the same results in the History rule, with the goal cells in red.');
   if (!S.goals.length && !S.baits.length) tip('No goal (step 4): every reaction where the catalysts recover is reported, including ones where the pattern just dies.');
 
   // output and running
@@ -882,11 +947,25 @@ function build(S, forSetup) {
     else L.push('part ' + tr(S.part));
   }
   num('output-gap', S.outputGap);
+  if (tr(S.uniqueOutput)) L.push('unique-output ' + fname(S.uniqueOutput));
+  num('resume-from', S.resumeFrom);
+  num('split-level', S.splitLevel, 1);
+  if (tr(S.spaceshipCutoff)) {
+    const v = tr(S.spaceshipCutoff);
+    if (/^(off|no)$/i.test(v)) L.push('spaceship-cutoff off');
+    else if (/^\d+$/.test(v)) L.push('spaceship-cutoff ' + v);
+    else err('Ignore spaceships farther than: a whole number, or "off".');
+  }
+  if (S.torusEdge && S.torusEdge !== 'flag') L.push('torus-edge ' + S.torusEdge);
+  if (S.contactFilter) L.push('contact-filter yes');
+  if (S.lightconeOff) L.push('lightcone no');
   if (S.keepDup) L.push('keep-duplicates yes');
   if (S.keepInteract) L.push('keep-interacting yes');
   if (S.verbose) L.push('verbose yes');
   const includes = S.includes.map(tr).filter(Boolean);
   includes.forEach(x => L.push('include ' + x));
+  const extra = String(S.extra || '').split(/\r?\n/).map(tr).filter(Boolean);
+  if (extra.length) L.push('', '# extra lines', ...extra);
 
   // catalysts
   if (!S.cats.length && !includes.length) err('Add at least one catalyst (step 3).');
@@ -928,13 +1007,244 @@ function build(S, forSetup) {
 }
 function defaultGoalGen() { const mg = isInt(S.maxGen) ? +S.maxGen : 250; return '1-' + mg; }
 
+
+/* ---------- layout files (multi-state RLE, see CatForce README) ---------- */
+// Decodes an RLE body: b/. = 0, o = 1, A..X = 1..24. Returns Map "x,y" -> state.
+function decodeStates(body) {
+  const cells = new Map(); let x = 0, y = 0, n = '';
+  for (const ch of body) {
+    if (/\s/.test(ch)) continue;
+    if (/\d/.test(ch)) { n += ch; continue; }
+    const k = n ? +n : 1; n = '';
+    if (ch === '!') break;
+    if (ch === '$') { y += k; x = 0; continue; }
+    const v = ch === 'b' || ch === '.' ? 0 : ch === 'o' ? 1 : (ch >= 'A' && ch <= 'X') ? ch.charCodeAt(0) - 64 : -1;
+    if (v < 0) throw new Error('unsupported character "' + ch + '" in the RLE');
+    if (v) for (let i = 0; i < k; i++) cells.set((x + i) + ',' + y, v);
+    x += k;
+  }
+  return cells;
+}
+const isRleHeader = t => /^\s*x\s*=/.test(t);
+function comps8(cells) { // cells: array of [x,y]; 8-connected pieces
+  const left = new Set(cells.map(c => c.join(','))), out = [];
+  for (const start of cells) {
+    const k0 = start.join(','); if (!left.has(k0)) continue;
+    left.delete(k0); const comp = [], todo = [start];
+    while (todo.length) {
+      const [x, y] = todo.pop(); comp.push([x, y]);
+      for (let dx = -1; dx <= 1; dx++) for (let dy = -1; dy <= 1; dy++) { const k = (x + dx) + ',' + (y + dy); if (left.has(k)) { left.delete(k); todo.push([x + dx, y + dy]); } }
+    }
+    out.push(comp);
+  }
+  return out;
+}
+// RLE drawn from the corner (0,0), not cropped (so offsets keep their meaning)
+function encodeRleFrom00(cells) {
+  if (!cells.length) return '!';
+  const set = new Set(cells.map(c => c.join(','))), x1 = Math.max(...cells.map(c => c[0])), y1 = Math.max(...cells.map(c => c[1]));
+  let out = '', blank = 0;
+  for (let y = 0; y <= y1; y++) {
+    let row = '', x = 0;
+    while (x <= x1) {
+      const v = set.has(x + ',' + y); let n = 0;
+      while (x <= x1 && set.has(x + ',' + y) === v) { n++; x++; }
+      if (v || x <= x1) row += (n > 1 ? n : '') + (v ? 'o' : 'b');
+    }
+    row = row.replace(/\d*b$/, '');
+    if (y > 0) blank++;
+    if (row) { if (blank) out += (blank > 1 ? blank : '') + '$'; blank = 0; out += row; }
+  }
+  return out + '!';
+}
+function placedRle(cells) { const b = bbox(cells); return {rle: encodeRle(cells.map(([x, y]) => [x - b.x0, y - b.y0])), x: b.x0, y: b.y0}; }
+const LAYOUT_ROLES = ['pat', 'zone', 'exclude', 'bait', 'required', 'fixed', 'goal', 'keep-empty', 'ignore'];
+function applyLegend(spec, roles) {
+  for (const w of spec.trim().split(/\s+/)) {
+    if (w === 'legend' || !w) continue;
+    const m = w.match(/^(\d+)=([a-z-]+)((?::[^:\s]*)*)$/);
+    if (!m) throw new Error('legend entry "' + w + '" must look like 4=goal');
+    let kind = m[2];
+    kind = {'catalyst-zone': 'zone', 'no-catalyst-zone': 'exclude', 'also-required': 'required', 'fixed-cat': 'fixed'}[kind] || kind;
+    if (!LAYOUT_ROLES.includes(kind)) throw new Error('unknown legend role "' + kind + '"');
+    roles[+m[1]] = {kind, args: m[3] ? m[3].slice(1).split(':') : []};
+  }
+}
+// Layout RLE text -> keyword lines (same rules as CatForce's LayoutToLines)
+function layoutToLines(text, outerLegend = []) {
+  const kw = [], legends = [];
+  let header = '', body = '', pos = null;
+  for (const raw of text.split(/\r?\n/)) {
+    const t = raw.trim(); if (!t) continue;
+    if (/^#CXRLE/.test(t)) { const m = t.match(/Pos=(-?\d+),(-?\d+)/); if (m) pos = [+m[1], +m[2]]; }
+    else if (/^#[Cc]/.test(t)) {
+      const rest = t.slice(2).trim(), w = rest.split(/\s+/)[0];
+      if (w === 'legend') legends.push(rest); else if (KEYWORDS.has(w)) kw.push(rest);
+    } else if (t[0] === '#') continue;
+    else if (!header && !body && isRleHeader(t)) header = t;
+    else if (body.includes('!')) kw.push(t);
+    else body += t;
+  }
+  const roles = {};
+  applyLegend('1=pat 2=zone 3=bait 4=goal 5=fixed 6=keep-empty', roles);
+  [...legends, ...outerLegend].forEach(l => applyLegend(l, roles));
+  const cells = decodeStates(body);
+  let w = 0, h = 0;
+  for (const k of cells.keys()) { const [x, y] = k.split(',').map(Number); w = Math.max(w, x + 1); h = Math.max(h, y + 1); }
+  const hf = key => { const m = header.match(new RegExp('(?:^|,)\\s*' + key + '\\s*=\\s*([^,]*)')); return m ? m[1].trim() : ''; };
+  if (+hf('x')) w = Math.max(w, +hf('x')); if (+hf('y')) h = Math.max(h, +hf('y'));
+  const [ox, oy] = pos || [-(w >> 1), -(h >> 1)];
+  const out = [];
+  const rule = hf('rule').replace(/(History|Super)$/i, '');
+  if (rule) out.push('rule ' + rule);
+  const byState = new Map();
+  for (const [k, v] of cells) {
+    if (!roles[v]) throw new Error('cells in state ' + v + ' have no meaning; add a legend line such as "#C legend ' + v + '=ignore"');
+    const [x, y] = k.split(',').map(Number);
+    if (!byState.has(v)) byState.set(v, []);
+    byState.get(v).push([x + ox, y + oy]);
+  }
+  const unions = {};
+  for (const [v, list] of [...byState].sort((a, b) => a[0] - b[0])) {
+    const r = roles[v], a = i => r.args[i] || '';
+    if (r.kind === 'ignore') continue;
+    if (['pat', 'required', 'zone', 'exclude', 'keep-empty'].includes(r.kind)) { (unions[r.kind] = unions[r.kind] || []).push(...list); continue; }
+    for (const comp of comps8(list)) {
+      const p = placedRle(comp), at = ' ' + p.x + ' ' + p.y;
+      if (r.kind === 'bait') out.push('bait ' + p.rle + at + (a(0) ? ' survive ' + a(0) : '') + (a(1) ? ' absent ' + a(1) : ''));
+      else if (r.kind === 'fixed') out.push('fixed-cat ' + p.rle + at + ' ' + (a(0) || '20') + (r.args.length > 1 ? ' ' + r.args.slice(1).join(' ') : ''));
+      else if (r.kind === 'goal') out.push('andfilter ' + (a(0) || '1-max') + ' ' + p.rle + at);
+    }
+  }
+  const names = {pat: 'pat', required: 'also-required', zone: 'catalyst-zone', exclude: 'no-catalyst-zone', 'keep-empty': 'keep-empty'};
+  for (const k of Object.keys(names)) if (unions[k]) { const p = placedRle(unions[k]); out.push(names[k] + ' ' + p.rle + ' ' + p.x + ' ' + p.y); }
+  return out.concat(kw);
+}
+// Keyword-file text with "#" end-of-line comments removed and "<<" RLE blocks filled in.
+function preprocessIn(text) {
+  const raw = text.split(/\r?\n/), out = [];
+  for (let i = 0; i < raw.length; i++) {
+    let line = raw[i];
+    if (/^\s*[a-z]/i.test(line)) line = line.replace(/\s#.*$/, '');
+    const t = line.trim().split(/\s+/), h = t.indexOf('<<');
+    if (h > 0) {
+      let body = '', closed = false;
+      while (++i < raw.length) {
+        const r = raw[i].trim();
+        if (!r || r[0] === '#' || isRleHeader(r)) continue;
+        body += r; if (r.includes('!')) { closed = true; break; }
+      }
+      if (!closed) throw new Error('the RLE after "' + line.trim() + '" has no closing "!"');
+      const live = [...decodeStates(body)].filter(([, v]) => v % 2 === 1).map(([k]) => k.split(',').map(Number));
+      t[h] = encodeRleFrom00(live);
+      line = t.join(' ');
+    }
+    out.push(line);
+  }
+  return out.join('\n');
+}
+// True if the text is a layout (an RLE file) rather than a keyword file
+function looksLikeLayout(text) {
+  for (const raw of text.split(/\r?\n/)) { const t = raw.trim(); if (!t || t[0] === '#') continue; return isRleHeader(t); }
+  return false;
+}
+// The current form as a layout file: pattern (state 1), baits (3) and fixed
+// catalysts (5) drawn in LifeHistory states; everything else as "#C" lines.
+function layoutFromState() {
+  const r = build(S), lines = r.text.split('\n');
+  const drawn = [];
+  const pat = patCellsAbs(); for (const c of pat) drawn.push([c, 1]);
+  const kw = [], legend = [];
+  const sameOpts = (list, f) => list.length && list.every(o => f(o) === f(list[0]));
+  const baitsDrawn = sameOpts(S.baits, b => tr(b.survive) + ':' + tr(b.absent));
+  if (baitsDrawn) {
+    for (const b of S.baits) { const d = decodeRle(cleanRle(b.rle).rle), bx = parseInt(b.x, 10) || 0, by = parseInt(b.y, 10) || 0; for (const [x, y] of d.cells) drawn.push([[x + bx, y + by], 3]); }
+    const s0 = S.baits[0]; if (tr(s0.survive) || tr(s0.absent)) legend.push('3=bait:' + tr(s0.survive) + (tr(s0.absent) ? ':' + tr(s0.absent) : ''));
+  }
+  const fixedDrawn = sameOpts(S.fixed, f => tr(f.maxActive));
+  if (fixedDrawn) {
+    for (const f of S.fixed) { const d = decodeRle(cleanRle(f.rle).rle), fx = parseInt(f.x, 10) || 0, fy = parseInt(f.y, 10) || 0; for (const [x, y] of d.cells) drawn.push([[x + fx, y + fy], 5]); }
+    if (tr(S.fixed[0].maxActive) !== '20') legend.push('5=fixed:' + tr(S.fixed[0].maxActive));
+  }
+  for (const l of lines) {
+    const w = l.trim().split(/\s+/)[0];
+    if (!w || w[0] === '#' || w === 'rule' || w === 'pat') continue;
+    if ((w === 'bait' && baitsDrawn) || (w === 'fixed-cat' && fixedDrawn)) continue;
+    kw.push(l.trim());
+  }
+  if (!drawn.length) return {text: '', error: 'There is nothing to draw yet (no active pattern).'};
+  const grid = new Map();
+  for (const [[x, y], v] of drawn) if (!grid.has(x + ',' + y)) grid.set(x + ',' + y, v);
+  const xs = [...grid.keys()].map(k => +k.split(',')[0]), ys = [...grid.keys()].map(k => +k.split(',')[1]);
+  const x0 = Math.min(...xs), y0 = Math.min(...ys), w = Math.max(...xs) - x0 + 1, h = Math.max(...ys) - y0 + 1;
+  const rows = [];
+  for (let y = y0; y < y0 + h; y++) {
+    let row = '', run = 0, cur = null;
+    const flush = () => { if (run) row += (run > 1 ? run : '') + (cur ? String.fromCharCode(64 + cur) : '.'); };
+    for (let x = x0; x < x0 + w; x++) { const v = grid.get(x + ',' + y) || 0; if (v !== cur) { flush(); cur = v; run = 0; } run++; }
+    if (cur) flush();
+    rows.push(row);
+  }
+  let body = '';
+  for (let i = 0, blank = 0; i < rows.length; i++) {
+    if (i > 0) blank++;
+    if (rows[i]) { if (blank) body += (blank > 1 ? blank : '') + '$'; blank = 0; body += rows[i]; }
+  }
+  body += '!';
+  const rule = (String(S.rule || '').replace(/\s+/g, '') || 'B3/S23') + 'History';
+  const text = ['#C CatForce layout: state 1 (green) = active pattern, 3 (white) = bait, 5 = fixed catalyst.',
+    ...(legend.length ? ['#C legend ' + legend.join(' ')] : []), ...kw.map(l => '#C ' + l),
+    '#CXRLE Pos=' + x0 + ',' + y0, 'x = ' + w + ', y = ' + h + ', rule = ' + rule, ...(body.match(/.{1,70}/g) || [])].join('\n') + '\n';
+  return {text, error: r.issues.some(i => i.t === 'err') ? 'The form still has errors (see the list below the file).' : ''};
+}
+// A result -> fixed catalysts: a line of the output-list file, or one result
+// pasted as RLE (lined up with the active pattern).
+function importResult(text) {
+  const added = [];
+  // "may be missing for" of the cat line with this shape (in any orientation), else 20
+  const shapeKey = rle => { const d = decodeRle(cleanRle(rle).rle); return d.cells.length ? canonKey(d.cells) : ''; };
+  const maxActiveFor = rle => { const k = shapeKey(rle); const c = k && S.cats.find(c => shapeKey(c.rle) === k); return c ? tr(c.maxActive) : '20'; };
+  if (/top-left \(/.test(text)) {
+    const re = /(?:cat line \d+ \[([^\]]*)\] as (\S+)|fixed-cat \[([^\]]*)\]) top-left \((-?\d+),(-?\d+)\)/g;
+    let m;
+    while ((m = re.exec(text))) {
+      const rle = m[2] || m[3], name = m[1] || m[3];
+      added.push({rle: cleanRle(rle).rle, x: m[4], y: m[5], maxActive: maxActiveFor(name)});
+    }
+    if (!added.length) return {error: 'No catalyst positions found in that line.'};
+  } else {
+    if (S.sym && S.sym !== 'C1') return {error: 'With a symmetry set, paste the line from the output-list file instead (an RLE also holds the symmetric copies).'};
+    const cl = cleanRle(text); if (cl.error) return {error: cl.error};
+    const got = decodeRle(cl.rle).cells, have = new Set(got.map(c => c.join(',')));
+    const pat = patCellsAbs(); if (!pat.length) return {error: 'Set the active pattern first, so the result can be lined up with it.'};
+    let t = null;
+    for (const q of got) {
+      const dx = q[0] - pat[0][0], dy = q[1] - pat[0][1];
+      if (pat.every(([x, y]) => have.has((x + dx) + ',' + (y + dy)))) { t = [dx, dy]; break; }
+    }
+    if (!t) return {error: 'The active pattern was not found in that RLE. Paste exactly one result, as it starts.'};
+    const known = new Set(pat.map(([x, y]) => (x + t[0]) + ',' + (y + t[1])));
+    for (const b of S.baits) { const d = decodeRle(cleanRle(b.rle).rle), bx = parseInt(b.x, 10) || 0, by = parseInt(b.y, 10) || 0; for (const [x, y] of d.cells) known.add((x + bx + t[0]) + ',' + (y + by + t[1])); }
+    for (const comp of comps8(got.filter(c => !known.has(c.join(','))))) {
+      const p = placedRle(comp.map(([x, y]) => [x - t[0], y - t[1]]));
+      added.push({rle: p.rle, x: String(p.x), y: String(p.y), maxActive: maxActiveFor(p.rle)});
+    }
+    if (!added.length) return {error: 'That result has no catalysts besides the pattern.'};
+  }
+  S.fixed.push(...added);
+  return {added: added.length};
+}
+
 /* ---------- reading an existing file ---------- */
 function parseIn(text) {
   const st = defaultState(), ignored = [];
+  text = looksLikeLayout(text) ? layoutToLines(text).join('\n') : preprocessIn(text);
   Object.assign(st, {maxGen: '', numCat: '', stable: '', output: '', patDx: '0', patDy: '0', rule: ''});
   const simple = {'max-gen': 'maxGen', 'start-gen': 'startGen', 'last-gen': 'lastGen', 'num-catalyst': 'numCat', 'num-transparent': 'numTransparent',
     'stable-interval': 'stable', 'stop-after-cats-destroyed': 'stopAfter', 'max-category-size': 'maxCatSize', 'output-gap': 'outputGap',
-    'threads': 'threads', 'max-results': 'maxResults', 'max-time': 'maxTime', 'max-junk': 'maxJunk', 'part': 'part', 'symmetry': 'sym'};
+    'threads': 'threads', 'max-results': 'maxResults', 'max-time': 'maxTime', 'max-junk': 'maxJunk', 'part': 'part', 'symmetry': 'sym',
+    'torus': 'torus', 'spaceship-cutoff': 'spaceshipCutoff', 'torus-edge': 'torusEdge', 'resume-from': 'resumeFrom', 'split-level': 'splitLevel'};
+  const extra = [];
   const yes = v => !/^(no|false|0|off)$/i.test(v);
   for (const line of text.split(/\r?\n/)) {
     const t = line.trim().split(/\s+/), kw = t[0];
@@ -950,6 +1260,15 @@ function parseIn(text) {
       case 'keep-duplicates': st.keepDup = yes(t[1]); break;
       case 'keep-interacting': st.keepInteract = yes(t[1]); break;
       case 'verbose': st.verbose = yes(t[1]); break;
+      case 'contact-filter': st.contactFilter = yes(t[1]); break;
+      case 'lightcone': st.lightconeOff = !yes(t[1]); break;
+      case 'unique-output': st.uniqueOutput = t.slice(1).join(' '); break;
+      case 'fixed-cat':
+        if (t.length === 5) st.fixed.push({rle: t[1], x: t[2], y: t[3], maxActive: t[4]});
+        else extra.push(line.trim()); // with catalyst options: kept as written
+        break;
+      case 'catalyst-zone': case 'no-catalyst-zone': case 'keep-empty': case 'lightcone-tight': extra.push(line.trim()); break;
+      case 'layout': ignored.push(line.trim() + ' (open the layout file itself instead)'); break;
       case 'search-area': case 'exclude-area':
         if (t.length >= 5) st.areas.push({mode: kw === 'exclude-area' ? 'exclude' : 'include', x: t[1], y: t[2], w: t[3], h: t[4]}); break;
       case 'pat': st.patRaw = t[1]; if (t.length > 3) { st.patDx = t[2]; st.patDy = t[3]; } break;
@@ -989,6 +1308,7 @@ function parseIn(text) {
       default: ignored.push(line.trim().slice(0, 60));
     }
   }
+  st.extra = extra.join('\n');
   return {st, ignored};
 }
 
@@ -1017,7 +1337,7 @@ function syncStatic() {
     if (el.type === 'checkbox') el.checked = !!v;
     else if (el.tagName === 'SELECT') {
       if (v && ![...el.options].some(o => o.value === v)) el.add(new Option(v + ' (not recognised)', v));
-      el.value = v || 'C1';
+      el.value = v || el.options[0].value;
     } else el.value = v ?? '';
   });
   $('#f-includes').value = S.includes.join('\n');
@@ -1080,6 +1400,17 @@ function renderBaits() {
     </div>`).join('') || '<div class="empty">No baits.</div>';
 }
 
+function renderFixed() {
+  $('#fixed').innerHTML = S.fixed.map((f, i) => `
+    <div class="goal" data-i="${i}">
+      <label class="fld grow"><span class="lbl">Fixed catalyst ${i + 1} <code>fixed-cat</code></span>
+        <textarea data-k="fixed.${i}.rle" data-rle="1" rows="2" spellcheck="false">${esc(f.rle)}</textarea></label>
+      <label class="fld"><span class="lbl">x</span><input type="text" data-k="fixed.${i}.x" value="${esc(f.x)}" inputmode="numeric"></label>
+      <label class="fld"><span class="lbl">y</span><input type="text" data-k="fixed.${i}.y" value="${esc(f.y)}" inputmode="numeric"></label>
+      <label class="fld"><span class="lbl">May be missing for</span><input type="text" data-k="fixed.${i}.maxActive" value="${esc(f.maxActive)}" inputmode="numeric"></label>
+      <button class="small danger" data-act="delFixed" data-i="${i}">Remove</button>
+    </div>`).join('') || '<div class="empty">None: every catalyst is searched for.</div>';
+}
 function renderLib() {
   const R = ruleOk();
   const have = new Set(S.cats.map(c => { const d = decodeRle(cleanRle(c.rle).rle); return d.cells.length ? canonKey(d.cells) : ''; }));
@@ -1205,13 +1536,13 @@ document.addEventListener('click', e => {
 // Drag on the map to add a search rectangle (hold Shift to exclude).
 (() => {
   const cv = document.getElementById('map'); let st = null;
-  const cell = e => { const r = cv.getBoundingClientRect(); return [Math.floor((e.clientX - r.left) / r.width * 64) - 32, Math.floor((e.clientY - r.top) / r.height * 64) - 32]; };
+  const cell = e => { const r = cv.getBoundingClientRect(), T = TOR(); return [Math.floor((e.clientX - r.left) / r.width * T) - T / 2, Math.floor((e.clientY - r.top) / r.height * T) - T / 2]; };
   cv.style.cursor = 'crosshair'; cv.style.touchAction = 'none';
   cv.addEventListener('pointerdown', e => { st = {a: cell(e), ex: e.shiftKey}; cv.setPointerCapture(e.pointerId); });
   cv.addEventListener('pointermove', e => {
-    if (!st) return; drawMap(); const b = cell(e), s = cv.width / 64, ctx = cv.getContext('2d');
+    if (!st) return; drawMap(); const b = cell(e), T = TOR(), s = cv.width / T, ctx = cv.getContext('2d');
     ctx.strokeStyle = cssVar(st.ex ? '--err' : '--accent'); ctx.lineWidth = 2;
-    ctx.strokeRect((Math.min(st.a[0], b[0]) + 32) * s, (Math.min(st.a[1], b[1]) + 32) * s, (Math.abs(b[0] - st.a[0]) + 1) * s, (Math.abs(b[1] - st.a[1]) + 1) * s);
+    ctx.strokeRect((Math.min(st.a[0], b[0]) + T / 2) * s, (Math.min(st.a[1], b[1]) + T / 2) * s, (Math.abs(b[0] - st.a[0]) + 1) * s, (Math.abs(b[1] - st.a[1]) + 1) * s);
   });
   cv.addEventListener('pointerup', e => {
     if (!st) return; const b = cell(e), a = st.a;
@@ -1229,7 +1560,7 @@ function renderGoals() {
       <label class="fld grow"><span class="lbl">Pattern</span><textarea data-k="goals.${i}.rle" data-rle="1" rows="2" spellcheck="false" placeholder="RLE">${esc(f.rle)}</textarea>
         <span class="chips">${GOAL_CHIPS.map(([n, r]) => `<button class="chip" data-fill="${i}" data-rle="${esc(r)}">${esc(n)}</button>`).join('')}<button class="chip" data-fill="${i}" data-rle="@pat">The active pattern</button></span></label>
       <label class="fld"><span class="lbl">At generation(s)</span><input type="text" data-k="goals.${i}.gen" value="${esc(f.gen)}" placeholder="${esc(defaultGoalGen())}">
-        <small>A single number, or a range such as 20-150. A range is only checked once every catalyst has recovered.</small></label>
+        <small>A single number, or a range such as 20-150 (20-max = to the last generation). A range is only checked once every catalyst has recovered.</small></label>
       ${f.type === 'match' ? '' : `<label class="fld"><span class="lbl">x</span><input type="text" data-k="goals.${i}.dx" value="${esc(f.dx)}" inputmode="numeric"></label>
       <label class="fld"><span class="lbl">y</span><input type="text" data-k="goals.${i}.dy" value="${esc(f.dy)}" inputmode="numeric"></label>`}
       <button class="small danger" data-act="delGoal" data-i="${i}">Remove</button>
@@ -1253,40 +1584,47 @@ function patCellsAbs() {
   return d.cells.map(([x, y]) => [x + dx, y + dy]);
 }
 function drawMap() {
-  const cv = $('#map'), ctx = cv.getContext('2d'), s = cv.width / 64;
+  const cv = $('#map'), ctx = cv.getContext('2d'), T = TOR(), H = T / 2, s = cv.width / T;
+  $('#mapSize').textContent = T + ' × ' + T + ' torus';
   ctx.clearRect(0, 0, cv.width, cv.height);
   const rects = S.areas.map(r => ({mode: r.mode, v: [r.x, r.y, r.w, r.h].map(t => parseInt(t, 10))})).filter(r => r.v.every(Number.isFinite) && r.v[2] > 0 && r.v[3] > 0);
   const inc = rects.filter(r => r.mode !== 'exclude'), exc = rects.filter(r => r.mode === 'exclude');
   const inR = (r, x, y) => x >= r.v[0] && x < r.v[0] + r.v[2] && y >= r.v[1] && y < r.v[1] + r.v[3];
   ctx.fillStyle = cssVar('--area');
-  for (let x = -32; x < 32; x++) for (let y = -32; y < 32; y++) {
+  for (let x = -H; x < H; x++) for (let y = -H; y < H; y++) {
     const ok = (inc.length ? inc.some(r => inR(r, x, y)) : (x >= -30 && x < 30 && y >= -30 && y < 30)) && !exc.some(r => inR(r, x, y));
-    if (ok) ctx.fillRect((x + 32) * s, (y + 32) * s, s, s);
+    if (ok) ctx.fillRect((x + H) * s, (y + H) * s, s, s);
   }
   ctx.strokeStyle = cssVar('--grid'); ctx.lineWidth = 1;
-  for (let i = 0; i <= 64; i += 8) { ctx.beginPath(); ctx.moveTo(i * s + .5, 0); ctx.lineTo(i * s + .5, cv.height); ctx.moveTo(0, i * s + .5); ctx.lineTo(cv.width, i * s + .5); ctx.stroke(); }
+  for (let i = 0; i <= T; i += 8) { ctx.beginPath(); ctx.moveTo(i * s + .5, 0); ctx.lineTo(i * s + .5, cv.height); ctx.moveTo(0, i * s + .5); ctx.lineTo(cv.width, i * s + .5); ctx.stroke(); }
   ctx.strokeStyle = cssVar('--axis');
-  ctx.beginPath(); ctx.moveTo(32 * s + .5, 0); ctx.lineTo(32 * s + .5, cv.height); ctx.moveTo(0, 32 * s + .5); ctx.lineTo(cv.width, 32 * s + .5); ctx.stroke();
-  const pat = patCellsAbs(), key = c => wrap64(c[0]) + ',' + wrap64(c[1]), own = new Set(pat.map(key));
+  ctx.beginPath(); ctx.moveTo(H * s + .5, 0); ctx.lineTo(H * s + .5, cv.height); ctx.moveTo(0, H * s + .5); ctx.lineTo(cv.width, H * s + .5); ctx.stroke();
+  const pat = patCellsAbs(), key = c => wrapT(c[0]) + ',' + wrapT(c[1]), own = new Set(pat.map(key));
   const sym = CHAIN[S.sym] ? S.sym : 'C1';
-  const dot = (x, y) => ctx.fillRect((wrap64(x) + 32) * s, (wrap64(y) + 32) * s, s - 1, s - 1);
+  const dot = (x, y) => ctx.fillRect((wrapT(x) + H) * s, (wrapT(y) + H) * s, Math.max(1, s - 1), Math.max(1, s - 1));
   ctx.fillStyle = cssVar('--ghost');
   for (const c of symExpand(pat, sym)) if (!own.has(key(c))) dot(c[0], c[1]);
   ctx.fillStyle = cssVar('--bait');
   for (const b of S.baits) { const d = decodeRle(cleanRle(b.rle).rle), bx = parseInt(b.x, 10) || 0, by = parseInt(b.y, 10) || 0; for (const [x, y] of d.cells) dot(x + bx, y + by); }
   ctx.fillStyle = cssVar('--cell');
   for (const [x, y] of pat) dot(x, y);
+  // fixed catalysts, with their symmetric copies
+  ctx.fillStyle = cssVar('--accent');
+  for (const f of S.fixed) {
+    const d = decodeRle(cleanRle(f.rle).rle), fx = parseInt(f.x, 10) || 0, fy = parseInt(f.y, 10) || 0;
+    for (const [x, y] of symExpand(d.cells.map(([a, b]) => [a + fx, b + fy]), sym)) dot(x, y);
+  }
   // "Always present" (also-required) cells: yellow outline
   const ad = decodeRle(cleanRle(S.alsoRle).rle), ax = parseInt(S.alsoX, 10) || 0, ay = parseInt(S.alsoY, 10) || 0;
   ctx.strokeStyle = cssVar('--warn'); ctx.lineWidth = 1.5;
-  for (const [x, y] of ad.cells) ctx.strokeRect((wrap64(x + ax) + 32) * s + .75, (wrap64(y + ay) + 32) * s + .75, s - 1.5, s - 1.5);
+  for (const [x, y] of ad.cells) ctx.strokeRect((wrapT(x + ax) + H) * s + .75, (wrapT(y + ay) + H) * s + .75, s - 1.5, s - 1.5);
 }
 
 function symNote() {
   const box = $('#symMsg'), sym = S.sym;
   if (!sym || sym === 'C1' || !CHAIN[sym]) { box.textContent = ''; return; }
   const pat = patCellsAbs(); if (!pat.length) { box.textContent = ''; return; }
-  const k = c => wrap64(c[0]) + ',' + wrap64(c[1]), own = new Set(pat.map(k));
+  const k = c => wrapT(c[0]) + ',' + wrapT(c[1]), own = new Set(pat.map(k));
   const all = symExpand(pat, sym), extra = all.filter(c => !own.has(k(c)));
   if (!extra.length) { box.className = 'msg ok'; box.textContent = 'The pattern is already symmetric about this centre.'; return; }
   const touch = extra.some(([x, y]) => { for (let dx = -1; dx <= 1; dx++) for (let dy = -1; dy <= 1; dy++) if (own.has(k([x + dx, y + dy]))) return true; return false; });
@@ -1315,7 +1653,7 @@ function update() {
   clearTimeout(saveTimer);
   saveTimer = setTimeout(() => { try { localStorage.setItem('catforce-gen-v2', JSON.stringify({S, fname: $('#fname').value})); } catch (e) {} }, 400);
 }
-function renderAll() { syncStatic(); renderObjs(); renderSetups(); renderBaits(); renderCats(); renderGoals(); renderAreas(); update(); }
+function renderAll() { syncStatic(); renderObjs(); renderSetups(); renderBaits(); renderCats(); renderFixed(); renderGoals(); renderAreas(); update(); }
 
 /* ---------- starting pattern: split a pasted pattern into objects ---------- */
 function analysePaste(apply) {
@@ -1323,6 +1661,7 @@ function analysePaste(apply) {
   const raw = S.paste || '';
   if (!raw.trim()) { split = {objs: [], setups: [], pick: 0}; renderObjs(); renderSetups(); return; }
   const cl = cleanRle(raw);
+  if (cl.error && looksLikeLayout(raw) && /[A-X.]/.test(raw.replace(/^[#x].*$/gm, ''))) { msg.className = 'msg err'; msg.textContent = 'This is a multi-state layout file. Open it with "Open a file" at the top instead.'; return; }
   if (cl.error) { msg.className = 'msg err'; msg.textContent = 'This does not look like an RLE: ' + cl.error + '.'; return; }
   let ruleNote = '';
   if (cl.rule && apply && cl.rule.replace(/\s/g, '').toLowerCase() !== String(S.rule).replace(/\s/g, '').toLowerCase()) {
@@ -1440,6 +1779,7 @@ document.addEventListener('input', e => {
   if (el.type === 'checkbox' || el.tagName === 'SELECT') {
     if (el.dataset.re === 'cats') renderCats();
     if (el.dataset.re === 'goals') renderGoals();
+    if (el.dataset.re === 'all') { renderAll(); return; }
   }
   update();
 });
@@ -1459,7 +1799,11 @@ document.addEventListener('click', async e => {
   const i = b.dataset.i !== undefined ? +b.dataset.i : -1;
   if (b.dataset.rule) { S.rule = b.dataset.rule; $('#f-rule').value = S.rule; catCache = new Map(); renderCats(); update(); return; }
   if (b.dataset.lib !== undefined) { const [n, r] = LIB[+b.dataset.lib]; addCatalyst(r, n); renderCats(); update(); return; }
-  if (b.dataset.quad) { const q = b.dataset.quad.split(' '); S.areas.push({mode: 'exclude', x: q[0], y: q[1], w: q[2], h: q[3]}); renderAreas(); update(); return; }
+  if (b.dataset.quad) {
+    const H = TOR() / 2, q = b.dataset.quad; // tl tr bl br
+    S.areas.push({mode: 'exclude', x: String(q[1] === 'l' ? -H : 0), y: String(q[0] === 't' ? -H : 0), w: String(H), h: String(H)});
+    renderAreas(); update(); return;
+  }
   if (b.dataset.fill !== undefined) {
     e.preventDefault();
     const gi = +b.dataset.fill;
@@ -1487,13 +1831,33 @@ document.addEventListener('click', async e => {
     case 'addAnd': S.goals.push(newGoal('andfilter')); renderGoals(); break;
     case 'addOr': S.goals.push(newGoal('orfilter')); renderGoals(); break;
     case 'delArea': S.areas.splice(i, 1); renderAreas(); break;
+    case 'addFixed': S.fixed.push(newFixed()); renderFixed(); break;
+    case 'delFixed': S.fixed.splice(i, 1); renderFixed(); break;
+    case 'resultGo': {
+      const m = $('#resultMsg'), txt = $('#resultPaste').value;
+      if (!txt.trim()) { m.className = 'msg err'; m.textContent = 'Paste a result first.'; return; }
+      const r = importResult(txt);
+      if (r.error) { m.className = 'msg err'; m.textContent = r.error; return; }
+      m.className = 'msg ok';
+      m.textContent = 'Added ' + r.added + ' fixed catalyst' + (r.added > 1 ? 's' : '') + '. Lower "Catalysts per result" to the number still to find.';
+      $('#resultPaste').value = ''; renderFixed(); break;
+    }
+    case 'copyLayout': case 'saveLayout': {
+      const r = layoutFromState(), m = $('#copyMsg');
+      if (!r.text) { m.className = 'msg err'; m.textContent = r.error; return; }
+      const name = (tr($('#fname').value) || 'search.txt').replace(/\.[^.]*$/, '') + '.rle';
+      if (b.id === 'copyLayout') await copyText(r.text, m, $('#out')); else await saveFiles([{name, text: r.text}], m);
+      if (r.error) { m.className = 'msg warn'; m.textContent += ' ' + r.error; }
+      return;
+    }
     case 'addArea': S.areas.push(newArea('include')); renderAreas(); break;
     case 'addExclude': S.areas.push(newArea('exclude')); renderAreas(); break;
     case 'catPasteGo': pasteCatalysts(); return;
     case 'btnOpen': $('#openPanel').hidden = false; $('#importBox').focus(); return;
     case 'importClose': $('#openPanel').hidden = true; return;
     case 'importAll': {
-      const r = parseIn($('#importBox').value);
+      let r;
+      try { r = parseIn($('#importBox').value); } catch (err) { $('#importMsg').className = 'msg err'; $('#importMsg').textContent = 'Could not read it: ' + err.message + '.'; return; }
       if (!r.st.patRaw && !r.st.cats.length) { $('#importMsg').className = 'msg err'; $('#importMsg').textContent = 'No pat or cat lines found in that text.'; return; }
       loadState(r.st);
       $('#importMsg').className = 'msg ' + (r.ignored.length ? 'warn' : 'ok');
@@ -1501,7 +1865,9 @@ document.addEventListener('click', async e => {
       return;
     }
     case 'importCats': {
-      const r = parseIn($('#importBox').value.split(/\r?\n/).filter(l => /^\s*cat\s/.test(l)).join('\n'));
+      let r;
+      try { r = parseIn(looksLikeLayout($('#importBox').value) ? layoutToLines($('#importBox').value).filter(l => /^cat\s/.test(l)).join('\n') : $('#importBox').value.split(/\r?\n/).filter(l => /^\s*cat\s/.test(l)).join('\n')); }
+      catch (err) { $('#importMsg').className = 'msg err'; $('#importMsg').textContent = 'Could not read it: ' + err.message + '.'; return; }
       S.cats.push(...r.st.cats); renderCats(); update();
       $('#importMsg').className = 'msg ok'; $('#importMsg').textContent = 'Added ' + r.st.cats.length + ' catalysts.';
       return;
@@ -1538,7 +1904,7 @@ async function copyText(text, msgEl, fallbackEl) {
 let dl = null;
 (async () => {
   try { if (window.claude && claude.use) dl = await claude.use('downloads'); } catch (e) { dl = null; }
-  if (dl) { $('#save').hidden = false; const sa = $('#saveAll'); if (sa) sa.hidden = false; }
+  if (dl) { $('#save').hidden = false; $('#saveLayout').hidden = false; const sa = $('#saveAll'); if (sa) sa.hidden = false; }
 })();
 async function saveFiles(files, msgEl) {
   if (!dl) return;

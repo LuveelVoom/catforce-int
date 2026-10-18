@@ -1,0 +1,18 @@
+#C max-gen 24
+#C num-catalyst 2
+#C stable-interval 10
+#C output layout_example_results.rle
+#C output-list layout_example_list.txt
+#C cat 2o$2o 100 0 0 .
+#C cat bo$obo$bo 100 -1 -1 .
+#C cat 2o$obo$b2o 100 -1 -1 |
+#C cat bo$obo$obo$bo 100 -1 -2 /
+#C cat b2o$o2bo$bobo$2bo 100 -2 -2 +
+#C cat 2o$obo$bobo$2bo! 100 -1 -1 +
+#C CatForce layout example (open in Golly; run with ./CatForce layout_example.rle).
+#C Green (state 1) = active pattern, blue (state 2) = where catalysts may go.
+#C Other states: 3 bait, 4 goal, 5 fixed catalyst, 6 keep empty; see README "Layout files".
+#CXRLE Pos=-10,-10
+x = 16, y = 21, rule = B3/S23History
+15B$15B$15B$15B$15B$15B$15B$15B$15B$15B$15B$13BAB$12B3A$11BA3BA$12B3A$
+13BAB$15B$15B$15B$15B$15B!

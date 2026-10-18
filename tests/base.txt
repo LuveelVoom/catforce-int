@@ -1,9 +1,10 @@
-intb                          1.6s results: 230/8574              2726fad117
-conway                       10.3s results: 5/16                  c22a9e7453
+intb                          0.4s results: 230/8574              10287d0fb6
+conway                        1.2s results: 5/16                  c22a9e7453
 baitA                         0.0s results: 1/2                   969da5d3de
 quad                          0.0s results: 1/2                   3196bd2cb4
-sym                           2.0s results: 2/2                   ae82bda7d0
-ex_orfilter                   0.3s results: 4/5                   533f69cc87
-ex_match                      4.8s results: 1/2                   47c2d42ea6
-ex_phase-changing-blinker     0.7s results: 0/0                   d41d8cd98f
-ex_p34                        0.4s results: 0/0                   d41d8cd98f
+sym                           0.2s results: 2/2                   ae82bda7d0
+ex_orfilter                   0.1s results: 4/5                   533f69cc87
+ex_match                      0.9s results: 1/2                   47c2d42ea6
+ex_phase-changing-blinker     0.1s results: 0/0                   d41d8cd98f
+ex_p34                        0.1s results: 0/0                   d41d8cd98f
+layout                        1.2s results: 5/12                  8196a4fac3

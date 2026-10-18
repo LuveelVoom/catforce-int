@@ -186,8 +186,8 @@ details.more > .body { display: flex; flex-direction: column; gap: 12px; }
 </div>
 
 <section id="openPanel" class="step" hidden>
-  <header><span class="num">↥</span><div><h2>Open an existing file</h2><p>Choose a file, or paste its text (a whole .in file, or just some <code>cat</code> lines from a catalyst list).</p></div></header>
-  <input type="file" id="importFile" accept=".in,.txt,text/plain">
+  <header><span class="num">↥</span><div><h2>Open an existing file</h2><p>Choose a file, or paste its text: a whole .in file, a CatForce layout (<code>.rle</code>), or just some <code>cat</code> lines from a catalyst list.</p></div></header>
+  <input type="file" id="importFile" accept=".in,.txt,.rle,text/plain">
   <textarea id="importBox" rows="6" spellcheck="false" placeholder="rule B3/S23&#10;max-gen 100&#10;pat ...&#10;cat 2o$2o! 20 -1 -1 ."></textarea>
   <div class="btnrow">
     <button id="importAll" class="primary">Replace the form with this file</button>
@@ -236,7 +236,7 @@ details.more > .body { display: flex; flex-direction: column; gap: 12px; }
           <label class="fld"><span class="lbl">x</span><input type="text" id="f-patDx" data-k="patDx" inputmode="numeric" placeholder="0"></label>
           <label class="fld"><span class="lbl">y</span><input type="text" id="f-patDy" data-k="patDy" inputmode="numeric" placeholder="0"></label>
         </div>
-        <small class="hint">x, y is the top-left corner on the 64×64 torus: (0,0) is the centre, x grows to the right, y grows downwards.</small>
+        <small class="hint">x, y is the top-left corner on the torus (64×64 unless set in step 5): (0,0) is the centre, x grows to the right, y grows downwards.</small>
         <h3>Baits <span class="opt">must be disturbed, then reappear intact and survive</span></h3>
         <div id="baits" class="list"></div>
         <div class="btnrow"><button id="addBait" class="small">Add a bait</button></div>
@@ -258,6 +258,16 @@ details.more > .body { display: flex; flex-direction: column; gap: 12px; }
     <div class="btnrow"><button id="catPasteGo">Add pasted catalysts</button><span id="catPasteMsg" class="msg"></span></div>
     <div id="orientFix" class="callout tip" hidden></div>
     <div id="cats" class="list"></div>
+    <div>
+      <h3 style="margin-bottom:4px">Already placed <span class="opt"><code>fixed-cat</code>: catalysts kept from an earlier result. They must recover like the others, and the search adds "Catalysts per result" more.</span></h3>
+    </div>
+    <div id="fixed" class="list"></div>
+    <div class="btnrow"><button id="addFixed" class="small">Add a fixed catalyst</button></div>
+    <label class="fld"><span class="lbl">Or take them from a result</span>
+      <textarea id="resultPaste" rows="2" spellcheck="false" placeholder="A line of the output-list file, or one result copied from the results .rle in Golly"></textarea>
+      <small>Every catalyst of that result becomes a fixed catalyst. An RLE is lined up with the active pattern, so paste one result exactly as it starts.</small>
+    </label>
+    <div class="btnrow"><button id="resultGo">Use its catalysts as fixed</button><span id="resultMsg" class="msg"></span></div>
   </section>
 
   <!-- 4. Goal -->
@@ -281,6 +291,13 @@ details.more > .body { display: flex; flex-direction: column; gap: 12px; }
   <section class="step" id="s-size">
     <header><span class="num">5</span><div><h2>Search size</h2><p>These decide how long the search takes. Empty boxes use CatForce's defaults, shown in grey.</p></div></header>
     <div class="fields" id="sizeFields"></div>
+    <label class="fld"><span class="lbl">Torus size <code>torus</code></span>
+      <select id="f-torus" data-k="torus" data-re="all">
+        <option value="64">64 × 64 (default, fastest)</option>
+        <option value="128">128 × 128 (room for big areas; about 2.5–3.5× slower)</option>
+      </select>
+      <small>The board wraps around at its edges. CatForce runs its 128 version itself (built on first use).</small>
+    </label>
     <div>
       <h3 style="margin-bottom:4px">Where catalysts may go <span class="opt"><code>search-area</code> / <code>exclude-area</code></span></h3>
       <small class="hint">Rectangles x y width height on the torus (shaded on the map). Drag on the map to add one; hold Shift while dragging to exclude. Allowed = all included rectangles minus all excluded ones.</small>
@@ -290,10 +307,10 @@ details.more > .body { display: flex; flex-direction: column; gap: 12px; }
       <button id="addArea" class="small">Include a rectangle</button>
       <button id="addExclude" class="small">Exclude a rectangle</button>
       <span class="opt">Leave out a quarter:</span>
-      <button class="small" data-quad="-32 -32 32 32">top-left</button>
-      <button class="small" data-quad="0 -32 32 32">top-right</button>
-      <button class="small" data-quad="-32 0 32 32">bottom-left</button>
-      <button class="small" data-quad="0 0 32 32">bottom-right</button>
+      <button class="small" data-quad="tl">top-left</button>
+      <button class="small" data-quad="tr">top-right</button>
+      <button class="small" data-quad="bl">bottom-left</button>
+      <button class="small" data-quad="br">bottom-right</button>
     </div>
     <details class="more">
       <summary>More limits</summary>
@@ -322,7 +339,21 @@ details.more > .body { display: flex; flex-direction: column; gap: 12px; }
       <label class="check"><input type="checkbox" id="f-keepDup" data-k="keepDup"><span>Keep duplicate results <code>keep-duplicates</code><small>By default, results that are mirror images or rotations of each other are kept once.</small></span></label>
       <label class="check"><input type="checkbox" id="f-keepInteract" data-k="keepInteract"><span>Keep results whose catalysts touch each other <code>keep-interacting</code><small>Off by default: such results are usually two catalysts fused into one object.</small></span></label>
       <label class="check"><input type="checkbox" id="f-verbose" data-k="verbose"><span>Print every first-catalyst placement <code>verbose</code><small>The old, very long console output.</small></span></label>
+      <label class="check"><input type="checkbox" id="f-contactFilter" data-k="contactFilter"><span>Contact filter <code>contact-filter</code><small>Skip a catalyst that never comes back on its own within "may be missing for". Much faster; can lose results where a later catalyst rescues an earlier one.</small></span></label>
+      <label class="check"><input type="checkbox" id="f-lightconeOff" data-k="lightconeOff"><span>Turn off lightcone pruning <code>lightcone no</code><small>On by default; it mainly helps with 3 or more catalysts.</small></span></label>
     </div>
+    <label class="fld"><span class="lbl">Results that reach the torus edge <code>torus-edge</code></span>
+      <select id="f-torusEdge" data-k="torusEdge">
+        <option value="flag">Keep, marked in the output list (default)</option>
+        <option value="drop">Drop them</option>
+        <option value="off">Don't check</option>
+      </select>
+      <small>Such a reaction may wrap around the torus, which cannot happen on an infinite plane.</small>
+    </label>
+    <label class="fld"><span class="lbl">Extra lines</span>
+      <textarea id="f-extra" data-k="extra" rows="2" spellcheck="false" placeholder="keep-empty o! 10 0"></textarea>
+      <small>Copied into the file as written: anything this form has no field for, such as <code>catalyst-zone</code>, <code>no-catalyst-zone</code> or <code>keep-empty</code> (easiest to draw in a layout file).</small>
+    </label>
     <label class="fld"><span class="lbl">Include other files <code>include</code></span>
       <textarea id="f-includes" rows="2" spellcheck="false" placeholder="catlists/The_Tiny_List_of_Catalysts"></textarea>
       <small>One path per line; their lines are read as if pasted here (for example a catalyst list).</small>
@@ -333,13 +364,14 @@ details.more > .body { display: flex; flex-direction: column; gap: 12px; }
 
 <aside class="preview">
   <section class="panel">
-    <h2>Map <span class="opt">64 × 64 torus</span></h2>
+    <h2>Map <span class="opt" id="mapSize">64 × 64 torus</span></h2>
     <canvas id="map" width="384" height="384" role="img" aria-label="Map of the starting pattern and the area where catalysts may be placed"></canvas>
     <div class="legend">
       <span><i style="background:var(--cell)"></i>active pattern</span>
       <span><i style="background:var(--ghost)"></i>symmetric copy</span>
       <span><i style="background:var(--bait)"></i>bait</span>
       <span><i style="border:1.5px solid var(--warn)"></i>always present</span>
+      <span><i style="background:var(--accent)"></i>fixed catalyst</span>
       <span><i style="background:var(--area);border:1px solid var(--axis)"></i>catalyst positions</span>
     </div>
   </section>
@@ -351,6 +383,11 @@ details.more > .body { display: flex; flex-direction: column; gap: 12px; }
       <button id="copy" class="primary">Copy</button>
       <button id="save" hidden>Save file</button>
       <span id="copyMsg" class="msg"></span>
+    </div>
+    <div class="btnrow">
+      <button id="copyLayout" class="small">Copy as layout (.rle)</button>
+      <button id="saveLayout" class="small" hidden>Save layout</button>
+      <span class="opt">One Golly-readable file: pattern, baits and fixed catalysts drawn, the rest as <code>#C</code> lines. Run it directly: <code>./CatForce search.rle</code></span>
     </div>
     <ul id="issues" class="issues"></ul>
     <div class="run">

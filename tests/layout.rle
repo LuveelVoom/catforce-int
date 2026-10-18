@@ -1,0 +1,15 @@
+#C legend 6=keep-empty
+#C This line is an ordinary comment
+#CXRLE Pos=-5,1
+x = 11, y = 5, rule = B3/S23History
+8.A$7.3A$F5.A3.A$7.3A$8.A!
+max-gen 24
+num-catalyst 2
+stable-interval 10
+output o_layout.rle
+cat 2o$2o 100 0 0 .
+cat bo$obo$bo 100 -1 -1 .
+cat 2o$obo$b2o 100 -1 -1 |
+cat bo$obo$obo$bo 100 -1 -2 /
+cat b2o$o2bo$bobo$2bo 100 -2 -2 +
+cat 2o$obo$bobo$2bo! 100 -1 -1 +

@@ -19,11 +19,15 @@
 #include <chrono>
 #include <csignal>
 #include <unordered_map>
+#include <map>
+#include <set>
 #include <array>
 #include <algorithm>
 
-const int MAX_CATALYSTS = 5;
+const int MAX_SEARCHED = 5;   // num-catalyst limit
+const int MAX_CATALYSTS = 8;  // searched + fixed-cat
 const int MAX_BAITS = 8;
+const unsigned kFilterMaxGen = 1999999999u; // filter range ending in "max", until max-gen is known
 
 void split(const std::string &s, char delim, std::vector<std::string> &elems) {
   std::stringstream ss(s);
@@ -114,6 +118,18 @@ public:
   // (an escaped spaceship, e.g. a glider being eaten far from the reaction). 0 = off.
   int spaceshipCutoff = 10;
   int torus = N;             // torus size; a different value re-runs the CatForce<size> binary
+  // An RLE placed with its top-left corner at (x, y)
+  struct PlacedRle {
+    std::string rle;
+    int x = 0, y = 0;
+    std::string rest; // fixed-cat: max-active and catalyst attributes
+  };
+  std::vector<PlacedRle> fixedCats;      // catalysts already in place (not searched for)
+  std::vector<PlacedRle> catalystZones;  // catalysts must lie inside these cells
+  std::vector<PlacedRle> noCatalystZones; // ... and outside these
+  std::vector<PlacedRle> keepEmpty;      // cells that must stay dead in every generation
+  std::string torusEdge = "flag";        // results reaching the torus edge: flag | drop | off
+  bool patSeen = false;
 
   SearchParams() {
     maxGen = 250;
@@ -588,49 +604,462 @@ std::vector<SymmetryTransform> CharToTransforms(char ch) {
   }
 }
 
-// Reads an input file, expanding "include <file>" lines (so a catalyst list
-// can live in its own file). Relative paths are tried next to the including
-// file first, then in the current directory. Also strips Windows line endings.
-static std::vector<std::string> ReadInputLines(const std::string &fname, int depth = 0) {
-  if (depth > 8)
-    Die("include: nested too deeply (is there a loop?) at " + fname);
+// Every keyword of the input format (anything else is warned about).
+static const char *const kKeywords[] = {
+    "rule", "include", "cat", "max-gen", "num-catalyst", "num-transparent", "stable-interval",
+    "pat", "search-area", "exclude-area", "start-gen", "last-gen", "output", "full-report",
+    "filter", "andfilter", "orfilter", "match", "fit-in-width-height", "max-category-size",
+    "symmetry", "also-required", "stop-after-cats-destroyed", "max-junk", "keep-duplicates",
+    "keep-interacting", "output-gap", "bait", "threads", "max-time", "max-results", "output-list",
+    "verbose", "part", "unique-output", "lightcone", "lightcone-tight", "resume-from", "contact-filter", "split-level",
+    "spaceship-cutoff", "torus", "fixed-cat", "catalyst-zone", "no-catalyst-zone", "keep-empty", "torus-edge",
+    "layout", "legend"};
 
+static bool IsKnownKeyword(const std::string &w) {
+  for (const char *k : kKeywords)
+    if (w == k)
+      return true;
+  return false;
+}
+
+static std::string Trim(const std::string &str) {
+  size_t a = 0, b = str.size();
+  while (a < b && isspace((unsigned char)str[a])) a++;
+  while (b > a && isspace((unsigned char)str[b - 1])) b--;
+  return str.substr(a, b - a);
+}
+
+// "x = 12, y = 5, rule = B3/S23" (an RLE header line)
+static bool IsRleHeader(const std::string &t) {
+  size_t i = 0;
+  while (i < t.size() && isspace((unsigned char)t[i])) i++;
+  if (i >= t.size() || t[i] != 'x') return false;
+  i++;
+  while (i < t.size() && isspace((unsigned char)t[i])) i++;
+  return i < t.size() && t[i] == '=';
+}
+
+// Value of "key = value" in an RLE header (up to the next comma), or "".
+static std::string HeaderField(const std::string &header, const std::string &key) {
+  std::vector<std::string> parts;
+  split(header, ',', parts);
+  for (const std::string &part : parts) {
+    size_t eq = part.find('=');
+    if (eq != std::string::npos && Trim(part.substr(0, eq)) == key)
+      return Trim(part.substr(eq + 1));
+  }
+  return "";
+}
+
+typedef std::map<std::pair<int, int>, int> CellStates; // (x, y) -> state, live cells only
+
+// Decodes an RLE body (no header). b and . are state 0, o is 1, A..X are 1..24.
+static CellStates DecodeRleBody(const std::string &body, const std::string &what) {
+  CellStates cells;
+  int x = 0, y = 0;
+  long n = 0;
+  bool haveCount = false;
+  for (char ch : body) {
+    if (isspace((unsigned char)ch))
+      continue;
+    if (isdigit((unsigned char)ch)) {
+      n = n * 10 + (ch - '0');
+      haveCount = true;
+      if (n > 100000)
+        Die(what + ": run length too large in RLE");
+      continue;
+    }
+    int k = haveCount ? (int)n : 1;
+    n = 0;
+    haveCount = false;
+    if (ch == '!')
+      break;
+    if (ch == '$') {
+      y += k;
+      x = 0;
+      continue;
+    }
+    int v;
+    if (ch == 'b' || ch == '.')
+      v = 0;
+    else if (ch == 'o')
+      v = 1;
+    else if (ch >= 'A' && ch <= 'X')
+      v = ch - 'A' + 1;
+    else
+      Die(what + ": unsupported character '" + std::string(1, ch) + "' in RLE");
+    if (v)
+      for (int i = 0; i < k; i++)
+        cells[{x + i, y}] = v;
+    x += k;
+  }
+  return cells;
+}
+
+// Two-state RLE (o b $ !) of `cells`, drawn from the corner (x0, y0).
+static std::string CellsToRle(const std::set<std::pair<int, int>> &cells, int x0, int y0) {
+  if (cells.empty())
+    return "!";
+  int maxx = x0, maxy = y0;
+  for (const auto &c : cells) {
+    maxx = std::max(maxx, c.first);
+    maxy = std::max(maxy, c.second);
+  }
+  std::string out;
+  int blankRows = 0;
+  for (int y = y0; y <= maxy; y++) {
+    std::string row;
+    int run = 0;
+    bool cur = false;
+    auto flush = [&]() {
+      if (run > 0) {
+        if (run > 1) row += std::to_string(run);
+        row += cur ? 'o' : 'b';
+      }
+    };
+    for (int x = x0; x <= maxx; x++) {
+      bool v = cells.count({x, y}) > 0;
+      if (run > 0 && v != cur) { flush(); run = 0; }
+      cur = v;
+      run++;
+    }
+    if (cur) flush(); // trailing dead cells are implied
+    if (y > y0) blankRows++;
+    if (!row.empty()) {
+      if (blankRows > 0)
+        out += (blankRows > 1 ? std::to_string(blankRows) : "") + "$";
+      blankRows = 0;
+      out += row;
+    }
+  }
+  return out + "!";
+}
+
+// Same, cropped to the cells' bounding box; returns the box corner in x0, y0.
+static std::string CellsToRleCropped(const std::set<std::pair<int, int>> &cells, int &x0, int &y0) {
+  x0 = y0 = 0;
+  if (cells.empty())
+    return "!";
+  x0 = cells.begin()->first;
+  y0 = cells.begin()->second;
+  for (const auto &c : cells) {
+    x0 = std::min(x0, c.first);
+    y0 = std::min(y0, c.second);
+  }
+  return CellsToRle(cells, x0, y0);
+}
+
+// 8-connected pieces of a cell set
+static std::vector<std::set<std::pair<int, int>>> Components(const std::set<std::pair<int, int>> &cells) {
+  std::vector<std::set<std::pair<int, int>>> out;
+  std::set<std::pair<int, int>> left = cells;
+  while (!left.empty()) {
+    std::set<std::pair<int, int>> comp;
+    std::vector<std::pair<int, int>> todo{*left.begin()};
+    left.erase(left.begin());
+    while (!todo.empty()) {
+      auto c = todo.back();
+      todo.pop_back();
+      comp.insert(c);
+      for (int dx = -1; dx <= 1; dx++)
+        for (int dy = -1; dy <= 1; dy++) {
+          auto it = left.find({c.first + dx, c.second + dy});
+          if (it != left.end()) {
+            todo.push_back(*it);
+            left.erase(it);
+          }
+        }
+    }
+    out.push_back(comp);
+  }
+  return out;
+}
+
+// ---- layout files --------------------------------------------------------
+// A layout is a multi-state RLE (LifeHistory states, so it can be drawn and
+// edited in Golly) whose cell states give each cell a role; see README.md.
+// It is turned into ordinary keyword lines (pat, bait, fixed-cat, ...).
+struct LayoutRole {
+  std::string kind; // pat zone exclude bait required fixed goal keep-empty ignore
+  std::vector<std::string> args;
+};
+
+static void ApplyLegend(const std::string &spec, std::map<int, LayoutRole> &roles, const std::string &where) {
+  std::vector<std::string> words = splitwhitespace(spec);
+  for (size_t i = 0; i < words.size(); i++) {
+    if (i == 0 && words[i] == "legend")
+      continue;
+    size_t eq = words[i].find('=');
+    if (eq == std::string::npos)
+      Die(where + ": legend entry \"" + words[i] + "\" must look like 4=goal");
+    int state = ParseIntOrDie(words[i].substr(0, eq), where + ": legend state", 1);
+    if (state > 24)
+      Die(where + ": legend state " + std::to_string(state) + " is above 24");
+    std::vector<std::string> parts;
+    split(words[i].substr(eq + 1), ':', parts);
+    if (parts.empty())
+      Die(where + ": legend entry \"" + words[i] + "\" has no role");
+    std::string kind = parts[0];
+    if (kind == "catalyst-zone") kind = "zone";
+    if (kind == "no-catalyst-zone") kind = "exclude";
+    if (kind == "also-required") kind = "required";
+    if (kind == "fixed-cat") kind = "fixed";
+    static const char *const kinds[] = {"pat", "zone", "exclude", "bait", "required", "fixed", "goal", "keep-empty", "ignore"};
+    if (std::find_if(std::begin(kinds), std::end(kinds), [&](const char *k) { return kind == k; }) == std::end(kinds))
+      Die(where + ": unknown legend role \"" + kind + "\" (use pat, zone, exclude, bait, required, fixed, goal, keep-empty, ignore)");
+    roles[state] = {kind, std::vector<std::string>(parts.begin() + 1, parts.end())};
+  }
+}
+
+// Keyword lines for the layout in `fname`. Its top-left corner goes to
+// (ox, oy) if given, else to the "#CXRLE Pos=" Golly writes, else the layout
+// is centred on (0, 0). `outerLegend`: legend lines of the including file.
+static std::vector<std::string> LayoutToLines(const std::string &fname, bool originGiven, int ox, int oy,
+                                              const std::vector<std::string> &outerLegend) {
   std::ifstream in(fname.c_str());
   if (!in.good())
-    Die("Could not open file: " + fname);
+    Die("Could not open layout file: " + fname);
+
+  std::vector<std::string> keywordLines, fileLegend;
+  std::string header, body, line;
+  bool havePos = false;
+  int px = 0, py = 0;
+  while (std::getline(in, line)) {
+    std::string t = Trim(line);
+    if (t.empty())
+      continue;
+    if (t.compare(0, 6, "#CXRLE") == 0) {
+      size_t pos = t.find("Pos=");
+      if (pos != std::string::npos && sscanf(t.c_str() + pos + 4, "%d,%d", &px, &py) == 2)
+        havePos = true;
+    } else if (t.size() >= 2 && t[0] == '#' && (t[1] == 'C' || t[1] == 'c')) {
+      // "#C <keyword> ..." lines are part of the search; other comments are ignored
+      std::string rest = Trim(t.substr(2));
+      std::vector<std::string> words = splitwhitespace(rest);
+      if (words.empty())
+        continue;
+      if (words[0] == "legend")
+        fileLegend.push_back(rest);
+      else if (IsKnownKeyword(words[0]))
+        keywordLines.push_back(rest);
+    } else if (t[0] == '#') {
+      continue;
+    } else if (header.empty() && body.empty() && IsRleHeader(t)) {
+      header = t;
+    } else if (body.find('!') != std::string::npos) {
+      keywordLines.push_back(t); // after the RLE: plain keyword lines
+    } else {
+      body += t;
+    }
+  }
+
+  std::map<int, LayoutRole> roles;
+  ApplyLegend("1=pat 2=zone 3=bait 4=goal 5=fixed 6=keep-empty", roles, fname);
+  for (const std::string &l : fileLegend) ApplyLegend(l, roles, fname);
+  for (const std::string &l : outerLegend) ApplyLegend(l, roles, fname);
+
+  CellStates cells = DecodeRleBody(body, "layout " + fname);
+  int w = 0, h = 0;
+  for (const auto &c : cells) {
+    w = std::max(w, c.first.first + 1);
+    h = std::max(h, c.first.second + 1);
+  }
+  if (!header.empty()) {
+    std::string hw = HeaderField(header, "x"), hh = HeaderField(header, "y");
+    if (!hw.empty()) w = std::max(w, atoi(hw.c_str()));
+    if (!hh.empty()) h = std::max(h, atoi(hh.c_str()));
+  }
+  if (w > N || h > N)
+    Die("layout " + fname + ": " + std::to_string(w) + "x" + std::to_string(h) + " does not fit on the " +
+        std::to_string(N) + "x" + std::to_string(N) + " torus" + (N < 128 ? " (add \"torus 128\")" : ""));
+  if (!originGiven) {
+    if (havePos) { ox = px; oy = py; }
+    else { ox = -(w / 2); oy = -(h / 2); }
+  }
+
+  std::vector<std::string> out;
+  out.push_back("# layout " + fname + ": its top-left cell is at (" + std::to_string(ox) + "," + std::to_string(oy) + ")");
+  std::string rule = HeaderField(header, "rule");
+  for (const char *suffix : {"History", "history", "Super", "super"}) {
+    size_t L = strlen(suffix);
+    if (rule.size() > L && rule.compare(rule.size() - L, L, suffix) == 0)
+      rule = rule.substr(0, rule.size() - L);
+  }
+  if (!rule.empty())
+    out.push_back("rule " + rule);
+
+  std::map<std::string, std::set<std::pair<int, int>>> byKind;
+  std::map<int, std::set<std::pair<int, int>>> byState;
+  for (const auto &c : cells) {
+    auto r = roles.find(c.second);
+    if (r == roles.end())
+      Die("layout " + fname + ": cells in state " + std::to_string(c.second) +
+          " have no meaning; give it one with a legend line, e.g. \"#C legend " + std::to_string(c.second) + "=ignore\"");
+    byState[c.second].insert({c.first.first + ox, c.first.second + oy});
+  }
+  auto arg = [](const LayoutRole &r, size_t i) { return i < r.args.size() ? r.args[i] : std::string(); };
+  for (const auto &st : byState) {
+    const LayoutRole &r = roles[st.first];
+    const auto &set = st.second;
+    int x0, y0;
+    if (r.kind == "ignore")
+      continue;
+    if (r.kind == "pat" || r.kind == "required" || r.kind == "zone" || r.kind == "exclude" || r.kind == "keep-empty") {
+      byKind[r.kind].insert(set.begin(), set.end());
+      continue;
+    }
+    for (const auto &comp : Components(set)) {
+      std::string rle = CellsToRleCropped(comp, x0, y0);
+      std::string pos = " " + std::to_string(x0) + " " + std::to_string(y0);
+      if (r.kind == "bait") {
+        std::string l = "bait " + rle + pos;
+        if (!arg(r, 0).empty()) l += " survive " + arg(r, 0);
+        if (!arg(r, 1).empty()) l += " absent " + arg(r, 1);
+        out.push_back(l);
+      } else if (r.kind == "fixed") {
+        std::string l = "fixed-cat " + rle + pos + " " + (arg(r, 0).empty() ? "20" : arg(r, 0));
+        for (size_t i = 1; i < r.args.size(); i++) l += " " + r.args[i];
+        out.push_back(l);
+      } else if (r.kind == "goal") {
+        out.push_back("andfilter " + (arg(r, 0).empty() ? std::string("1-max") : arg(r, 0)) + " " + rle + pos);
+      }
+    }
+  }
+  static const std::pair<const char *, const char *> unions[] = {
+      {"pat", "pat"}, {"required", "also-required"}, {"zone", "catalyst-zone"},
+      {"exclude", "no-catalyst-zone"}, {"keep-empty", "keep-empty"}};
+  for (const auto &u : unions) {
+    auto it = byKind.find(u.first);
+    if (it == byKind.end())
+      continue;
+    int x0, y0;
+    std::string rle = CellsToRleCropped(it->second, x0, y0);
+    out.push_back(std::string(u.second) + " " + rle + " " + std::to_string(x0) + " " + std::to_string(y0));
+  }
+  out.insert(out.end(), keywordLines.begin(), keywordLines.end());
+  return out;
+}
+
+// True if the file is a layout (an RLE) rather than a keyword file.
+static bool IsLayoutFile(const std::string &fname) {
+  if (fname.size() > 4 && (fname.compare(fname.size() - 4, 4, ".rle") == 0 || fname.compare(fname.size() - 4, 4, ".RLE") == 0))
+    return true;
+  std::ifstream in(fname.c_str());
+  std::string line;
+  while (std::getline(in, line)) {
+    std::string t = Trim(line);
+    if (t.empty() || t[0] == '#')
+      continue;
+    return IsRleHeader(t);
+  }
+  return false;
+}
+
+static std::vector<std::string> ReadInputLines(const std::string &fname, int depth = 0);
+
+// Turns raw lines into keyword lines: strips "  # comments" at line ends,
+// reads "<<" RLE blocks, and expands include and layout lines.
+static std::vector<std::string> ProcessInputLines(const std::vector<std::string> &raw, const std::string &dir, int depth) {
+  auto resolve = [&](const std::string &path) {
+    if (!dir.empty() && std::ifstream((dir + path).c_str()).good())
+      return dir + path;
+    return path;
+  };
+  // a '#' after a space starts a comment (on keyword lines)
+  auto stripComment = [](std::string line) {
+    if (!line.empty() && line.back() == '\r')
+      line.pop_back();
+    std::string t = Trim(line);
+    if (!t.empty() && isalpha((unsigned char)t[0]))
+      for (size_t i = 1; i < line.size(); i++)
+        if (line[i] == '#' && isspace((unsigned char)line[i - 1]))
+          return line.substr(0, i);
+    return line;
+  };
+  std::vector<std::string> legends;
+  for (const std::string &l : raw) {
+    std::string c = stripComment(l);
+    std::vector<std::string> e = splitwhitespace(c);
+    if (!e.empty() && e[0] == "legend")
+      legends.push_back(Trim(c));
+  }
+
+  std::vector<std::string> out;
+  for (size_t li = 0; li < raw.size(); li++) {
+    std::string line = stripComment(raw[li]);
+    std::vector<std::string> elems = splitwhitespace(line);
+
+    // "<<" where an RLE goes: the RLE follows on the next lines, up to its "!"
+    // (as copied from Golly: header and #-lines are skipped)
+    auto here = std::find(elems.begin(), elems.end(), "<<");
+    if (here != elems.end()) {
+      std::string body;
+      bool closed = false;
+      while (++li < raw.size()) {
+        std::string r = Trim(raw[li]);
+        if (r.empty() || r[0] == '#' || IsRleHeader(r))
+          continue;
+        body += r;
+        if (r.find('!') != std::string::npos) { closed = true; break; }
+      }
+      if (!closed)
+        Die("The RLE after \"" + Trim(line) + "\" has no closing '!'");
+      CellStates cells = DecodeRleBody(body, elems[0]);
+      std::set<std::pair<int, int>> live;
+      for (const auto &c : cells)
+        if (c.second % 2 == 1) // LifeHistory: odd states are alive
+          live.insert(c.first);
+      *here = CellsToRle(live, 0, 0); // from the RLE's own corner, so offsets keep their meaning
+      line.clear();
+      for (const std::string &e : elems)
+        line += (line.empty() ? "" : " ") + e;
+    }
+
+    if (elems.size() >= 2 && elems[0] == "include") {
+      std::string path = Trim(Trim(line).substr(7));
+      std::vector<std::string> sub = ReadInputLines(resolve(path), depth + 1);
+      out.insert(out.end(), sub.begin(), sub.end());
+    } else if (elems.size() >= 2 && elems[0] == "layout") {
+      if (elems.size() != 2 && elems.size() != 4)
+        Die("Format: layout <file.rle> [x y]");
+      bool given = elems.size() == 4;
+      int x = given ? ParseIntOrDie(elems[2], "layout x") : 0, y = given ? ParseIntOrDie(elems[3], "layout y") : 0;
+      std::vector<std::string> sub = LayoutToLines(resolve(elems[1]), given, x, y, legends);
+      sub = ProcessInputLines(sub, dir, depth + 1);
+      out.insert(out.end(), sub.begin(), sub.end());
+    } else if (!elems.empty() && elems[0] == "legend") {
+      continue; // used by the layout lines above
+    } else {
+      out.push_back(line);
+    }
+  }
+  return out;
+}
+
+// Reads an input file: a keyword file (.in) or a layout (.rle). Expands
+// "include <file>" (relative paths are tried next to the including file first,
+// then in the current directory), "layout <file>", "<<" RLE blocks and end-of-line
+// comments. Also strips Windows line endings.
+static std::vector<std::string> ReadInputLines(const std::string &fname, int depth) {
+  if (depth > 8)
+    Die("include: nested too deeply (is there a loop?) at " + fname);
 
   std::string dir;
   size_t slash = fname.find_last_of("/\\");
   if (slash != std::string::npos)
     dir = fname.substr(0, slash + 1);
 
-  std::vector<std::string> out;
+  if (IsLayoutFile(fname))
+    return ProcessInputLines(LayoutToLines(fname, false, 0, 0, {}), dir, depth);
+
+  std::ifstream in(fname.c_str());
+  if (!in.good())
+    Die("Could not open file: " + fname);
+  std::vector<std::string> raw;
   std::string line;
-  while (std::getline(in, line)) {
-    if (!line.empty() && line.back() == '\r')
-      line.pop_back();
-
-    std::vector<std::string> elems = splitwhitespace(line);
-    if (elems.size() >= 2 && elems[0] == "include") {
-      size_t pos = line.find("include") + 7;
-      while (pos < line.size() && isspace((unsigned char)line[pos]))
-        pos++;
-      std::string path = line.substr(pos);
-      while (!path.empty() && isspace((unsigned char)path.back()))
-        path.pop_back();
-
-      std::string resolved = path;
-      if (!dir.empty() && !std::ifstream((dir + path).c_str()).good())
-        resolved = path;
-      else if (!dir.empty())
-        resolved = dir + path;
-      std::vector<std::string> sub = ReadInputLines(resolved, depth + 1);
-      out.insert(out.end(), sub.begin(), sub.end());
-    } else {
-      out.push_back(line);
-    }
-  }
-  return out;
+  while (std::getline(in, line))
+    raw.push_back(line);
+  return ProcessInputLines(raw, dir, depth);
 }
 
 // Scans the input for a "rule" line and applies it. This is done in a
@@ -703,18 +1132,7 @@ void ReadParams(const std::string& fname, std::vector<CatalystInput> &catalysts,
     // Lines starting with anything but a letter (#, =, -, ...) are comments.
     if (elems.empty() || !isalpha((unsigned char)elems[0][0]))
       continue;
-    static const char *const known[] = {
-        "rule", "include", "cat", "max-gen", "num-catalyst", "num-transparent", "stable-interval",
-        "pat", "search-area", "exclude-area", "start-gen", "last-gen", "output", "full-report",
-        "filter", "andfilter", "orfilter", "match", "fit-in-width-height", "max-category-size",
-        "symmetry", "also-required", "stop-after-cats-destroyed", "max-junk", "keep-duplicates",
-        "keep-interacting", "output-gap", "bait", "threads", "max-time", "max-results", "output-list",
-        "verbose", "part", "unique-output", "lightcone", "lightcone-tight", "resume-from", "contact-filter", "split-level",
-        "spaceship-cutoff", "torus"};
-    bool isKnown = false;
-    for (const char *k : known)
-      if (elems[0] == k)
-        isKnown = true;
+    bool isKnown = IsKnownKeyword(elems[0]);
     if (!isKnown) {
       std::cout << "Warning: unknown keyword \"" << elems[0] << "\" (line ignored): " << line << std::endl;
       continue;
@@ -739,8 +1157,8 @@ void ReadParams(const std::string& fname, std::vector<CatalystInput> &catalysts,
     if (elems[0] == numCat) {
       // The search keeps per-catalyst state in fixed arrays of MAX_CATALYSTS entries.
       params.numCatalysts = ParseIntOrDie(elems[1], "num-catalyst", 1);
-      if (params.numCatalysts > (unsigned)MAX_CATALYSTS)
-        Die("num-catalyst " + elems[1] + " is not supported (maximum " + std::to_string(MAX_CATALYSTS) + ")");
+      if (params.numCatalysts > (unsigned)MAX_SEARCHED)
+        Die("num-catalyst " + elems[1] + " is not supported (maximum " + std::to_string(MAX_SEARCHED) + ")");
     }
 
     if (elems[0] == numTransp)
@@ -750,6 +1168,9 @@ void ReadParams(const std::string& fname, std::vector<CatalystInput> &catalysts,
       params.stableInterval = ParseIntOrDie(elems[1], "stable-interval", 0);
 
     if (elems[0] == pat) {
+      if (params.patSeen)
+        Die("pat: the active pattern is given twice (a layout file also sets it)");
+      params.patSeen = true;
       CheckRle(elems[1], "pat");
       params.pat = elems[1];
 
@@ -823,7 +1244,8 @@ void ReadParams(const std::string& fname, std::vector<CatalystInput> &catalysts,
         params.filterGenRange.emplace_back(-1, -1);
       } else {
         unsigned minGen = ParseIntOrDie(rangeElems[0], elems[0] + " generation range", 0);
-        unsigned maxGen = ParseIntOrDie(rangeElems[1], elems[0] + " generation range", 0);
+        // "max" = the last generation (max-gen - 1), filled in after all lines are read
+        unsigned maxGen = rangeElems[1] == "max" ? kFilterMaxGen : ParseIntOrDie(rangeElems[1], elems[0] + " generation range", 0);
 
         params.filterGen.push_back(-1);
         params.filterGenRange.emplace_back(minGen, maxGen);
@@ -925,6 +1347,31 @@ void ReadParams(const std::string& fname, std::vector<CatalystInput> &catalysts,
       params.lightcone = !(elems[1] == "no" || elems[1] == "false" || elems[1] == "0" || elems[1] == "off");
     if (elems[0] == "unique-output")
       params.uniqueFile = elems[1];
+    if (elems[0] == "fixed-cat" || elems[0] == "catalyst-zone" || elems[0] == "no-catalyst-zone" ||
+        elems[0] == "keep-empty") {
+      const bool fixed = elems[0] == "fixed-cat";
+      if (elems.size() < (fixed ? 5u : 4u))
+        Die("Format: " + elems[0] + (fixed ? " <rle> <x> <y> <max-active> [cat options]" : " <rle> <x> <y>"));
+      CheckRle(elems[1], elems[0]);
+      SearchParams::PlacedRle r;
+      r.rle = elems[1];
+      r.x = ParseIntOrDie(elems[2], elems[0] + " x");
+      r.y = ParseIntOrDie(elems[3], elems[0] + " y");
+      if (fixed) {
+        ParseIntOrDie(elems[4], "fixed-cat max-active", 0);
+        for (size_t k = 4; k < elems.size(); k++)
+          r.rest += (k > 4 ? " " : "") + elems[k];
+        params.fixedCats.push_back(r);
+      } else {
+        (elems[0] == "catalyst-zone" ? params.catalystZones : elems[0] == "keep-empty" ? params.keepEmpty
+                                                                                         : params.noCatalystZones).push_back(r);
+      }
+    }
+    if (elems[0] == "torus-edge") {
+      params.torusEdge = elems[1];
+      if (elems[1] != "flag" && elems[1] != "drop" && elems[1] != "off")
+        Die("torus-edge: use flag, drop or off");
+    }
     if (elems[0] == "spaceship-cutoff") {
       const std::string &v = elems[1];
       params.spaceshipCutoff = (v == "no" || v == "off" || v == "false") ? 0 : ParseIntOrDie(v, "spaceship-cutoff", 0);
@@ -984,6 +1431,9 @@ void ReadParams(const std::string& fname, std::vector<CatalystInput> &catalysts,
 
   if(!hasLastGen)
     params.lastGen = params.maxGen - 1;
+  for (auto &r : params.filterGenRange)
+    if (r.second == (int)kFilterMaxGen)
+      r.second = (int)params.maxGen - 1;
 
   if (params.pat.length() == 0) {
     std::cout << "Did not read any pattern!" << std::endl;
@@ -1124,6 +1574,7 @@ public:
   std::string name;      // the RLE from its cat line
   int inputIndex = -1;   // which cat line (0-based) it came from
   int orient = 0;        // which orientation of that line
+  bool fixed = false;    // a fixed-cat: already placed, never searched for
 
   static std::vector<CatalystData> FromInput(CatalystInput &input);
 };
@@ -1642,6 +2093,16 @@ public:
     maxgen = maxGen + catDelta;
   }
 
+  // Every cell `init` touches in its first `gens` generations
+  static LifeState Extent(const LifeState &init, unsigned gens) {
+    LifeState extent = init, cur = init;
+    for (unsigned g = 0; g < gens; g++) {
+      cur.Step();
+      extent |= cur;
+    }
+    return extent;
+  }
+
   bool IsDuplicate(const LifeState &init) const {
     if (!dedupEnabled)
       return false;
@@ -1665,7 +2126,7 @@ public:
   bool Add(LifeState &init, const LifeState &afterCatalyst,
            const LifeState &catalysts, const Configuration &conf,
            unsigned firstGenSurvive,
-           unsigned genSurvive, const LifeState &goal = LifeState()) {
+           unsigned genSurvive, const LifeState &goal = LifeState(), const LifeState *knownExtent = nullptr) {
     if (dedupEnabled) {
       if (IsDuplicate(init)) {
         duplicatesDropped++;
@@ -1674,14 +2135,7 @@ public:
       seenInits[init.GetHash()].push_back(init);
     }
 
-    LifeState extent = init;
-    {
-      LifeState cur = init;
-      for (unsigned g = 0; g < maxgen; g++) {
-        cur.Step();
-        extent |= cur;
-      }
-    }
+    LifeState extent = knownExtent ? *knownExtent : Extent(init, maxgen);
 
     LifeState result = afterCatalyst ^ catalysts;
     result.gen = firstGenSurvive;
@@ -1815,6 +2269,13 @@ public:
   // solution (see ComputeLatestPlacementGens), and the latest over all of them.
   std::vector<int> latestPlacementGen;
   int latestPlacementGenAny = 0;
+  // fixed-cat entries: their index in `catalysts` and their position
+  std::vector<unsigned> fixedIdx;
+  std::vector<std::pair<int, int>> fixedPos;
+  unsigned rootCount = 0;  // catalysts in place before the search starts (the fixed ones)
+  unsigned totalCats = 0;  // rootCount + num-catalyst
+  LifeState catalystZone, noCatalystZone, keepEmpty;
+  std::atomic<unsigned> edgeFlagged{0}, edgeDropped{0};
 
   long long idx{};
   unsigned found{};
@@ -1837,15 +2298,15 @@ public:
   uint64_t AllCatalystsHash() const {
     std::stringstream ss;
     // (only the exact pair-skipping conditions used in LoadMasks matter, not num-catalyst itself)
-    ss << RuleTableKey() << (N == 64 ? "" : "|torus" + std::to_string(N)) << "|skipMust" << (params.numCatalysts == 2 && hasMustInclude)
+    ss << RuleTableKey() << (N == 64 ? "" : "|torus" + std::to_string(N)) << "|fixed" << fixedIdx.size() << "|skipMust" << (params.numCatalysts == 2 && hasMustInclude)
        << "|skipTransp" << (params.numTransparent == 1);
     for (auto &cat : catalysts)
-      ss << "|" << StateKey(cat.state) << "," << cat.period << "," << cat.mustInclude << "," << cat.transparent;
+      ss << "|" << StateKey(cat.state) << "," << cat.period << "," << cat.mustInclude << "," << cat.transparent << "," << cat.fixed;
     return Fnv1a(ss.str());
   }
 
   void LoadMasks() {
-    if (params.numCatalysts == 1)
+    if (totalCats == 1)
       return;
 
     catalystCollisionMasks = std::vector<LifeState>(catalysts.size() * catalysts.size());
@@ -1875,13 +2336,17 @@ public:
     // If not, load or generate the masks
     for (unsigned s = 0; s < catalysts.size(); s++) {
       for (unsigned t = 0; t < catalysts.size(); t++) {
-        if (params.numCatalysts == 2 && hasMustInclude &&
-            !catalysts[s].mustInclude && !catalysts[t].mustInclude)
-          continue;
+        if (catalysts[t].fixed)
+          continue; // never placed next to anything
+        if (!catalysts[s].fixed) {
+          if (params.numCatalysts == 2 && hasMustInclude &&
+              !catalysts[s].mustInclude && !catalysts[t].mustInclude)
+            continue;
 
-        if (params.numTransparent == 1 && catalysts[s].transparent &&
-            catalysts[t].transparent)
-          continue;
+          if (params.numTransparent == 1 && catalysts[s].transparent &&
+              catalysts[t].transparent)
+            continue;
+        }
 
         catalystCollisionMasks[s * catalysts.size() + t] = LoadCollisionMask(catalysts[s], catalysts[t]);
         catalystCollisionMasks[s * catalysts.size() + t].RecalculateMinMax();
@@ -1910,6 +2375,35 @@ public:
       std::vector<CatalystData> newcats = CatalystData::FromInput(input);
       catalysts.insert(catalysts.end(), newcats.begin(), newcats.end());
     }
+    // fixed-cat: one entry each (phase 0, as drawn), placed by Search()
+    for (const auto &f : params.fixedCats) {
+      std::vector<std::string> rest = splitwhitespace(f.rest);
+      std::string line = "cat " + f.rle + " " + rest[0] + " 0 0 .";
+      for (size_t k = 1; k < rest.size(); k++)
+        line += " " + rest[k];
+      CatalystInput in(line);
+      CatalystData d = CatalystData::FromInput(in)[0];
+      d.fixed = true;
+      d.inputIndex = -1;
+      fixedIdx.push_back(catalysts.size());
+      fixedPos.push_back({f.x, f.y});
+      catalysts.push_back(d);
+    }
+    rootCount = fixedIdx.size();
+    totalCats = params.numCatalysts + rootCount;
+    if (totalCats > (unsigned)MAX_CATALYSTS)
+      Die("num-catalyst plus fixed-cat lines may be at most " + std::to_string(MAX_CATALYSTS));
+
+    auto unionOf = [](const std::vector<SearchParams::PlacedRle> &v) {
+      LifeState r;
+      for (const auto &p : v)
+        r |= LifeState::Parse(p.rle.c_str(), p.x, p.y);
+      return r;
+    };
+    catalystZone = unionOf(params.catalystZones);
+    noCatalystZone = unionOf(params.noCatalystZones);
+    keepEmpty = unionOf(params.keepEmpty);
+
     hasMustInclude = false;
     for (auto &cat : catalysts) {
       hasMustInclude = hasMustInclude || cat.mustInclude;
@@ -2155,7 +2649,7 @@ public:
     workspace.JoinWSymChain(pat, params.symmetryChain);
 
     for (unsigned i = 0; i <= curIter + 1; i++) {
-      for (unsigned j = 0; j < params.numCatalysts; j++) {
+      for (unsigned j = 0; j < conf.count; j++) {
         for (unsigned k = 0; k < catalysts[conf.curs[j]].forbidden.size(); k++) {
           if (workspace.Contains(catalysts[conf.curs[j]].forbidden[k], conf.curx[j], conf.cury[j]))
             return true;
@@ -2317,7 +2811,8 @@ public:
       unsigned si = params.stableInterval;
       unsigned need = si == 0 ? 0 : ((si + p - 1) / p - 1) * p;
       latestPlacementGen[s] = catalysts[s].sacrificial ? (int)params.maxGen - 1 : (int)params.maxGen - 1 - (int)need;
-      latestPlacementGenAny = std::max(latestPlacementGenAny, latestPlacementGen[s]);
+      if (!catalysts[s].fixed)
+        latestPlacementGenAny = std::max(latestPlacementGenAny, latestPlacementGen[s]);
     }
     if (latestPlacementGenAny < (int)params.startGen)
       std::cout << "Warning: no catalyst can be placed early enough to stay recovered for stable-interval ("
@@ -2435,9 +2930,27 @@ public:
 
     std::string description = DescribeSolution(conf, successtime);
 
+    // A reaction that reaches the edge of the torus may come back from the
+    // other side, which cannot happen on the infinite plane.
+    LifeState extent = CategoryContainer::Extent(init, categoryContainer->maxgen);
+    bool edge = false;
+    if (params.torusEdge != "off") {
+      for (int k = 0; k < N && !edge; k++)
+        edge = extent.GetCell(-N / 2, k) || extent.GetCell(N / 2 - 1, k) || extent.GetCell(k, -N / 2) ||
+               extent.GetCell(k, N / 2 - 1);
+      if (edge && params.torusEdge == "drop") {
+        edgeDropped++;
+        return;
+      }
+      if (edge)
+        description += " | REACHES THE TORUS EDGE (may wrap around)";
+    }
+
     std::lock_guard<std::mutex> lk(mtx);
     if (categoryContainer->Add(init, afterCatalyst, steppedCatalysts, conf,
-                               successtime - params.stableInterval + 2, 0, goal)) {
+                               successtime - params.stableInterval + 2, 0, goal, &extent)) {
+      if (edge)
+        edgeFlagged++;
       found++;
       solutionLines.push_back(description);
 
@@ -2467,8 +2980,11 @@ public:
       placed.Move(conf.curx[j], conf.cury[j]);
       int x0, y0, w, h;
       std::string rle = BoundingBoxRle(placed, x0, y0, w, h);
-      ss << " | cat line " << (c.inputIndex + 1) << " [" << c.name << "] as " << rle
-         << " top-left (" << x0 << "," << y0 << ")";
+      if (c.fixed)
+        ss << " | fixed-cat [" << c.name << "] top-left (" << x0 << "," << y0 << ")";
+      else
+        ss << " | cat line " << (c.inputIndex + 1) << " [" << c.name << "] as " << rle
+           << " top-left (" << x0 << "," << y0 << ")";
     }
     return ss.str();
   }
@@ -2593,7 +3109,9 @@ public:
   // given) minus all exclude-area rectangles.
   LifeState BuildSearchBounds() const {
     LifeState bounds;
-    if (params.searchAreas.empty()) {
+    if (params.searchAreas.empty() && !params.catalystZones.empty()) {
+      bounds = ~LifeState(); // catalyst-zone limits the placements instead
+    } else if (params.searchAreas.empty()) {
       bounds = LifeState::SolidRect(params.searchArea[0], params.searchArea[1],
                                     params.searchArea[2], params.searchArea[3]);
     } else {
@@ -2624,9 +3142,71 @@ public:
       exit(1);
     }
 
+    // catalyst-zone / no-catalyst-zone: forbid origins where any cell of the
+    // catalyst (in any phase) would lie outside / inside them
+    LifeState zone, noZone;
+    zone.JoinWSymChain(catalystZone, params.symmetryChain);
+    noZone.JoinWSymChain(noCatalystZone, params.symmetryChain);
     std::vector<LifeState> masks(catalysts.size());
     for (unsigned s = 0; s < catalysts.size(); s++) {
       masks[s] = config.state.Convolve(catalysts[s].reactionMask) | ~bounds;
+      if (!catalystZone.IsEmpty() || !noCatalystZone.IsEmpty()) {
+        LifeState cells;
+        for (const LifeState &ph : catalysts[s].phases)
+          cells |= ph;
+        cells.Transform(Rotate180OddBoth);
+        cells.RecalculateMinMax();
+        if (!catalystZone.IsEmpty())
+          masks[s] |= (~zone).Convolve(cells);
+        if (!noCatalystZone.IsEmpty())
+          masks[s] |= noZone.Convolve(cells);
+      }
+    }
+
+    // fixed-cat: in place from generation 0, like catalysts the search placed
+    LifeState required = alsoRequired, antirequired;
+    antirequired.JoinWSymChain(keepEmpty, params.symmetryChain);
+    std::vector<TargetSet> baseTargets(totalCats);
+    for (unsigned k = 0; k < fixedIdx.size(); k++) {
+      const CatalystData &c = catalysts[fixedIdx[k]];
+      const int x = fixedPos[k].first, y = fixedPos[k].second;
+      LifeState placed = c.state;
+      placed.Move(x, y);
+      LifeState sym;
+      sym.JoinWSymChain(placed, params.symmetryChain);
+      if (!(config.state & sym).IsEmpty())
+        Die("fixed-cat " + c.name + " at (" + std::to_string(x) + "," + std::to_string(y) + ") overlaps the pattern or another fixed-cat");
+      config.curx[config.count] = x;
+      config.cury[config.count] = y;
+      config.curs[config.count] = fixedIdx[k];
+      config.count++;
+      config.startingCatalysts |= sym;
+      config.catalystsState |= sym;
+      config.state |= sym;
+      required.Join(c.required, x, y);
+      antirequired.Join(c.antirequired, x, y);
+      if (!c.isBlinker) {
+        LifeTarget t;
+        t.wanted = placed;
+        t.unwanted = c.target.unwanted;
+        t.unwanted.Move(x, y);
+        baseTargets[k].Add(t);
+      } else {
+        for (const LifeState &phase : c.phases) {
+          LifeState ph = phase;
+          LifeTarget t(ph);
+          t.wanted.Move(x, y);
+          t.unwanted.Move(x, y);
+          baseTargets[k].Add(t);
+        }
+      }
+      for (unsigned t = 0; t < catalysts.size(); t++)
+        masks[t].Join(catalystCollisionMasks[fixedIdx[k] * catalysts.size() + t], x, y);
+    }
+    {
+      LifeState next = config.catalystsState;
+      next.Step();
+      config.catalystsStill = next == config.catalystsState;
     }
 
     unsigned threads = params.numThreads;
@@ -2641,9 +3221,9 @@ public:
       tlsParts = threads;
       tlsRootCounter = 0; tlsTicket = ~0UL; tlsQual = 0;
       std::vector<LifeState> myMasks = masks;
-      std::vector<TargetSet> shiftedTargets(params.numCatalysts);
+      std::vector<TargetSet> shiftedTargets = baseTargets;
       Configuration myConfig = config;
-      RecursiveSearch(myConfig, myConfig.state, alsoRequired, LifeState(), std::move(myMasks), shiftedTargets,
+      RecursiveSearch(myConfig, myConfig.state, required, antirequired, std::move(myMasks), shiftedTargets,
                       std::array<unsigned, MAX_CATALYSTS>(), std::array<unsigned, MAX_CATALYSTS>());
       if (!stopFlag) gCurRoot[part] = ~0UL; // this thread finished all its share
     };
@@ -2671,6 +3251,10 @@ public:
               << "  pattern:       " << pat.GetPop() << " cells, " << w << "x" << h << " box at (" << x0 << "," << y0 << ")" << std::endl
               << "  symmetry:      " << params.symmetryName << std::endl
               << "  baits:         " << params.baits.size() << std::endl
+              << "  fixed-cat:     " << params.fixedCats.size() << std::endl
+              << "  zones:         " << (catalystZone.IsEmpty() ? std::string("-") : std::to_string(catalystZone.GetPop()) + " catalyst-zone cells")
+              << (noCatalystZone.IsEmpty() ? "" : ", " + std::to_string(noCatalystZone.GetPop()) + " no-catalyst-zone cells")
+              << (keepEmpty.IsEmpty() ? "" : ", " + std::to_string(keepEmpty.GetPop()) + " keep-empty cells") << std::endl
               << "  catalysts:     " << inputNames.size() << " cat line(s), " << catalysts.size()
               << " placements to try (orientations/phases included)" << std::endl
               << "  to place:      " << params.numCatalysts << " catalyst(s), stable for " << params.stableInterval << " gens" << std::endl
@@ -2722,7 +3306,7 @@ public:
     // close enough to P to influence it by F (light speed: 1 cell/gen).
     int lcF = -1;
     LifeState lcP;
-    if (params.lightcone && config.count > 0 && config.count < params.numCatalysts) {
+    if (params.lightcone && config.count > 0 && config.count < totalCats) {
       LifeState st = config.state, cs = config.catalystsState;
       auto miss = missingTime;
       for (unsigned g2 = st.gen; g2 < params.maxGen && lcF < 0; g2++, st.Step(), checkRequired ? cs.Step() : void()) {
@@ -2749,12 +3333,12 @@ public:
       if (ShouldStop())
         break;
 
-      if (config.count == 0 && g > params.lastGen)
+      if (config.count == rootCount && g > params.lastGen)
         return;
-      if (config.count == 0 && tlsPart == 0)
+      if (config.count == rootCount && tlsPart == 0)
         progressGen = g;
 
-      if (config.count == 0 && tlsPart == 0 && params.verbose) {
+      if (config.count == rootCount && tlsPart == 0 && params.verbose) {
         std::cout << "Collision at gen " << g << std::endl;
       }
 
@@ -2804,11 +3388,11 @@ public:
 
       // Catalysts are still missing here but none can be placed in time any
       // more, so nothing below this point of the search can succeed.
-      if (config.count != params.numCatalysts && (int)g > latestPlacementGenAny)
+      if (config.count != totalCats && (int)g > latestPlacementGenAny)
         break;
 
       // Try adding a catalyst
-      if (config.state.gen >= params.startGen && config.count != params.numCatalysts) {
+      if (config.state.gen >= params.startGen && config.count != totalCats) {
         LifeState next = config.state;
         next.Step();
 
@@ -2843,9 +3427,11 @@ public:
             }
           }
           for (unsigned s = 0; s < catalysts.size(); s++) {
+            if (catalysts[s].fixed)
+              continue;
             if (config.transparentCount == params.numTransparent && catalysts[s].transparent)
               continue;
-            if (config.count == params.numCatalysts - 1 && config.mustIncludeCount == 0 && !catalysts[s].mustInclude)
+            if (config.count == totalCats - 1 && config.mustIncludeCount == 0 && !catalysts[s].mustInclude)
               continue;
             if ((int)g > latestPlacementGen[s])
               continue; // too late for this catalyst to recover before max-gen
@@ -2891,7 +3477,7 @@ public:
                 }
 
                 if (!interacts) {
-                  if (config.count == 0 && tlsPart == 0 && params.verbose) {
+                  if (config.count == rootCount && tlsPart == 0 && params.verbose) {
                     std::cout << "Skipping catalyst " << s << " at "
                               << newPlacement.first << ", "
                               << newPlacement.second
@@ -2995,7 +3581,7 @@ public:
                 }
 
                 if (requiredFailed || antirequiredFailed) {
-                  if (config.count == 0 && tlsPart == 0 && params.verbose) {
+                  if (config.count == rootCount && tlsPart == 0 && params.verbose) {
                     std::cout << "Skipping catalyst " << s << " at "
                               << newPlacement.first << ", "
                               << newPlacement.second
@@ -3042,7 +3628,7 @@ public:
                 LifeState lookahead = newConfig.state;
                 if (!soloFail) lookahead.Step(catalysts[s].maxDisappear);
                 if (soloFail || !shiftedTargets[config.count].MatchedBy(lookahead)) {
-                  if (config.count == 0 && tlsPart == 0 && params.verbose) {
+                  if (config.count == rootCount && tlsPart == 0 && params.verbose) {
                     std::cout << "Skipping catalyst " << s << " at "
                               << newPlacement.first << ", "
                               << newPlacement.second
@@ -3056,7 +3642,7 @@ public:
                 }
               }
 
-              if (config.count == 0 && tlsPart == 0 && params.verbose) {
+              if (config.count == rootCount && tlsPart == 0 && params.verbose) {
                 std::cout << "Placing catalyst " << s << " at "
                           << newPlacement.first << ", " << newPlacement.second
                   //                                                              << ": " << newConfig.state.RLE()
@@ -3067,7 +3653,7 @@ public:
               // so it needs no masks at all (saves copying one LifeState per
               // catalyst type for most nodes of the search).
               std::vector<LifeState> newMasks;
-              if (newConfig.count != params.numCatalysts) {
+              if (newConfig.count != totalCats) {
                 newMasks = masks;
                 LifeState bounds;
                 if (params.maxW != -1) {
@@ -3092,7 +3678,7 @@ public:
               // top-level placements (every thread enumerates the same sequence).
               // With --part K/N, only every N-th of them belongs to this run at all.
               bool myShare = true;
-              if (config.count == 0) {
+              if (config.count == rootCount) {
                 unsigned long r = tlsRootCounter++;
                 myShare = r >= params.resumeFrom && (r % params.numParts) == params.partIndex;
                 if (myShare && tlsParts > 1 && (params.numCatalysts == 1 || params.splitLevel < 2)) {
@@ -3102,7 +3688,7 @@ public:
                   if (myShare) tlsTicket = gNextTicket.fetch_add(1); // next ticket is always > idx
                 }
                 if (myShare && gCurRoot) gCurRoot[tlsPart] = r;
-              } else if (config.count == 1 && tlsParts > 1 && params.numCatalysts >= 2 && params.splitLevel >= 2) {
+              } else if (config.count == rootCount + 1 && tlsParts > 1 && params.numCatalysts >= 2 && params.splitLevel >= 2) {
                 // Several catalysts: every thread runs each first placement, and the threads
                 // share out the second-level placements (much better balance with few roots).
                 unsigned long idx = tlsQual++;
@@ -3114,7 +3700,7 @@ public:
               if (myShare) {
                 RecursiveSearch(newConfig, history, newRequiredMask, newAntirequired, std::move(newMasks),
                                 shiftedTargets, missingTime, recoveredTime);
-                if (config.count == 0) {
+                if (config.count == rootCount) {
                   rootPlacementsDone++;
                   MaybeReport();
                 }
@@ -3140,12 +3726,12 @@ public:
       // Still block the locations that are hit too early
       if (g < params.startGen && !masks.empty()) {
         for (unsigned s = 0; s < catalysts.size(); s++) {
-          LifeState hitLocations = config.state.Convolve(catalysts[s].phaseReactionMask[g % catalysts[s].period]);
+          LifeState hitLocations = (config.state & ~config.catalystsState).Convolve(catalysts[s].phaseReactionMask[g % catalysts[s].period]);
           masks[s] |= hitLocations;
         }
       }
 
-      if (config.count == params.numCatalysts && !success) {
+      if (config.count == totalCats && !success) {
         bool allRecovered = true;
         for (unsigned i = 0; i < config.count; i++) {
           if (catalysts[config.curs[i]].sacrificial)
@@ -3164,7 +3750,7 @@ public:
         }
       }
 
-      if (config.count == 0)
+      if (config.count == rootCount)
         MaybeReport();
     }
 
@@ -3318,6 +3904,7 @@ int main(int argc, char *argv[]) {
   if (argc < 2 || std::string(argv[1]) == "--help" || std::string(argv[1]) == "-h") {
     std::cout << "Usage: CatForce <in file> [--check] [--threads N] [--max-time N[s|m|h]] [--max-results N] [--part K/N] [--verbose]" << std::endl
               << "  --check        parse the file, print a summary and exit" << std::endl
+              << "  --show-input   print the keyword lines the file amounts to (layouts, << blocks expanded)" << std::endl
               << "  --threads N    worker threads (0 = all cores)" << std::endl
               << "  --max-time T   stop after T (e.g. 90, 15m, 2h) and save" << std::endl
               << "  --max-results N  stop after N solutions" << std::endl
@@ -3347,6 +3934,11 @@ int main(int argc, char *argv[]) {
       checkOnly = true;
     else if (a == "--compile-rule")
       compileRule = true;
+    else if (a == "--show-input") {
+      for (const std::string &l : ReadInputLines(argv[1]))
+        std::cout << l << std::endl;
+      return 0;
+    }
     else if (a == "--threads")
       cliThreads = ParseIntOrDie(next("--threads"), "--threads", 0);
     else if (a == "--max-time")
@@ -3438,6 +4030,11 @@ int main(int argc, char *argv[]) {
     printf("Placements/solutions where catalysts (or their symmetric images) touched each other (%s): %u\n",
            searcher.params.keepInteracting ? "kept, keep-interacting is on" : "rejected",
            searcher.interactingRejected.load());
+  if (searcher.edgeFlagged > 0)
+    printf("Solutions reaching the torus edge (marked in output-list; \"torus-edge drop\" removes them, \"torus 128\" gives more room): %u\n",
+           searcher.edgeFlagged.load());
+  if (searcher.edgeDropped > 0)
+    printf("Solutions dropped because they reach the torus edge: %u\n", searcher.edgeDropped.load());
   searcher.PrintUsage();
   printf("Total elapsed time: %f seconds\n", searcher.ElapsedSeconds());
 }
