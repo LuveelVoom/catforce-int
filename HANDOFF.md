@@ -107,6 +107,15 @@ Engine changes (not visible in the input format):
     more; skipping zero-init of temporaries / Move+Join scratch arrays — within noise.
   * Remaining profile (3q4i max-gen 100): ~37% full steps in leaves whose disturbance spread
     widely, 15% search bookkeeping, 12% column-limited steps, 6% each Convolve / MatchedBy.
+- Speed work, round 2 (results identical, suite on 64 and 128):
+  * Convolve visits only the non-empty columns of its second argument (a catalyst mask spans
+    ~8-10 of 64) and applies each run of live cells with a log-step smear. It was 37% of a
+    HighLife search.
+  * Leaves without required/antirequired cells no longer step the catalysts-only state.
+  * HighLife (B36/S23) kernel added to rule_kernels.h (2.2x the table stepper).
+  * HighLife benchmark 5.8 s -> 3.2 s (10.2 s before round 1); 3q4i max-gen 100 12.8 s -> 11.8 s.
+  * Threads: 10 P-cores 7x, 14 cores 8.7x on 3q4i; split-level 2 was 4.5x slower there.
+  * The sampled 12% at the ShouldStop() line is a profiler artifact (stale return address).
 - Things tried and rejected (no gain): passing masks by reference, PGO, break-after-success,
   dead-end pruning, incremental StepDirty, smaller lookup tables, memo caches,
   "remember single-catalyst outcomes" (no correct cheap version exists).

@@ -720,94 +720,64 @@ public:
     return zoi;
   }
 
-  static inline void ConvolveInner(LifeState &result, const row_t (&doubledother)[N*2], row_t x, unsigned int k, unsigned int postshift) {
-    for (int i = 0; i < N; i++) {
-      result.state[i] |= RowRotl(convolve_row(x, doubledother[i+k]), postshift);
+  // OR of y rotated by 0, 1, ..., len-1 (= convolve_row(run of len ones, y))
+  static inline row_t Smear(row_t y, unsigned len) {
+    row_t acc = y;
+    for (unsigned covered = 1; covered < len;) {
+      unsigned step = std::min(covered, len - covered);
+      acc |= RowRotl(acc, step);
+      covered += step;
     }
+    return acc;
   }
 
+  // Every cell of `other` shifted by every live cell of this (cell (j, b) of
+  // this places other's cell (c, r) at (c + j, r + b)). Only the non-empty
+  // columns of `other` are visited, and each run of live cells in a column of
+  // this is applied at once.
   LifeState Convolve(const LifeState &other) const {
     LifeState result;
-    row_t doubledother[N*2];
-    memcpy(doubledother,     other.state, N * sizeof(row_t));
-    memcpy(doubledother + N, other.state, N * sizeof(row_t));
+    int cols[N];
+    int nc = 0;
+    for (int c = 0; c < N; c++)
+      if (other.state[c] != 0)
+        cols[nc++] = c;
+    if (nc == 0)
+      return result;
 
     for (unsigned j = 0; j < N; j++) {
-      unsigned k = N-j;
       row_t x = state[j];
-
-      // Annoying special case
-      if(x == ROW_ALL) {
-        ConvolveInner(result, doubledother, ROW_ALL, k, 0);
+      if (x == 0)
+        continue;
+      if (x == ROW_ALL) {
+        for (int t = 0; t < nc; t++)
+          result.state[(cols[t] + j) & (N - 1)] = ROW_ALL;
         continue;
       }
-
-    while (x != 0) {
-      unsigned int postshift;
-
-      row_t shifted;
-
-      if((x & 1) == 0) { // Possibly wrapped
-        int lsb = RowCtz(x);
-        shifted = RowRotr(x, lsb);
-        postshift = lsb;
-      } else{
-        int lead = RowClz(~x);
-        shifted = RowRotl(x, lead);
-        postshift = N-lead;
+      while (x != 0) {
+        unsigned postshift;
+        row_t shifted;
+        if ((x & 1) == 0) { // possibly wrapped
+          int lsb = RowCtz(x);
+          shifted = RowRotr(x, lsb);
+          postshift = lsb;
+        } else {
+          int lead = RowClz(~x);
+          shifted = RowRotl(x, lead);
+          postshift = N - lead;
+        }
+        unsigned runlength = RowCtz(~shifted);
+        row_t run = ((row_t)1 << runlength) - 1;
+        for (int t = 0; t < nc; t++) {
+          const int c = cols[t];
+          result.state[(c + j) & (N - 1)] |= RowRotl(Smear(other.state[c], runlength), postshift);
+        }
+        x &= ~RowRotl(run, postshift);
       }
-
-      unsigned runlength = RowCtz(~shifted);
-      runlength = std::min(runlength, (unsigned)32);
-      row_t run = ((row_t)1 << runlength) - 1;
-
-#if N != 64
-      ConvolveInner(result, doubledother, run, k, postshift);
-#else
-      switch(run) {
-      case (1 << 1) - 1: ConvolveInner(result, doubledother, run, k, postshift); break;
-      case (1 << 2) - 1: ConvolveInner(result, doubledother, run, k, postshift); break;
-      case (1 << 3) - 1: ConvolveInner(result, doubledother, run, k, postshift); break;
-      case (1 << 4) - 1: ConvolveInner(result, doubledother, run, k, postshift); break;
-      case (1 << 5) - 1: ConvolveInner(result, doubledother, run, k, postshift); break;
-      case (1 << 6) - 1: ConvolveInner(result, doubledother, run, k, postshift); break;
-      case (1 << 7) - 1: ConvolveInner(result, doubledother, run, k, postshift); break;
-      case (1 << 8) - 1: ConvolveInner(result, doubledother, run, k, postshift); break;
-      case (1 << 9) - 1: ConvolveInner(result, doubledother, run, k, postshift); break;
-      case (1 << 10) - 1: ConvolveInner(result, doubledother, run, k, postshift); break;
-      case (1 << 11) - 1: ConvolveInner(result, doubledother, run, k, postshift); break;
-      case (1 << 12) - 1: ConvolveInner(result, doubledother, run, k, postshift); break;
-      case (1 << 13) - 1: ConvolveInner(result, doubledother, run, k, postshift); break;
-      case (1 << 14) - 1: ConvolveInner(result, doubledother, run, k, postshift); break;
-      case (1 << 15) - 1: ConvolveInner(result, doubledother, run, k, postshift); break;
-      case (1 << 16) - 1: ConvolveInner(result, doubledother, run, k, postshift); break;
-      case (1 << 17) - 1: ConvolveInner(result, doubledother, run, k, postshift); break;
-      case (1 << 18) - 1: ConvolveInner(result, doubledother, run, k, postshift); break;
-      case (1 << 19) - 1: ConvolveInner(result, doubledother, run, k, postshift); break;
-      case (1 << 20) - 1: ConvolveInner(result, doubledother, run, k, postshift); break;
-      case (1 << 21) - 1: ConvolveInner(result, doubledother, run, k, postshift); break;
-      case (1 << 22) - 1: ConvolveInner(result, doubledother, run, k, postshift); break;
-      case (1 << 23) - 1: ConvolveInner(result, doubledother, run, k, postshift); break;
-      case (1 << 24) - 1: ConvolveInner(result, doubledother, run, k, postshift); break;
-      case (1 << 25) - 1: ConvolveInner(result, doubledother, run, k, postshift); break;
-      case (1 << 26) - 1: ConvolveInner(result, doubledother, run, k, postshift); break;
-      case (1 << 27) - 1: ConvolveInner(result, doubledother, run, k, postshift); break;
-      case (1 << 28) - 1: ConvolveInner(result, doubledother, run, k, postshift); break;
-      case (1 << 29) - 1: ConvolveInner(result, doubledother, run, k, postshift); break;
-      case (1 << 30) - 1: ConvolveInner(result, doubledother, run, k, postshift); break;
-      case (1ULL << 31) - 1: ConvolveInner(result, doubledother, run, k, postshift); break;
-      case (1ULL << 32) - 1: ConvolveInner(result, doubledother, run, k, postshift); break;
-      default:           ConvolveInner(result, doubledother, run, k, postshift); break;
-      }
-#endif
-
-      x &= ~RowRotl(run, postshift);
-    }
     }
 
     result.min = 0;
     result.max = N - 1;
-
     return result;
   }
 

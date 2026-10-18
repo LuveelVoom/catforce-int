@@ -3823,8 +3823,9 @@ public:
         // history |= config.state;
         advance();
       }
-      if (config.catalystsStill)
-        config.catalystsState.gen++; // fixed point: stepping would change nothing
+      // (a leaf only looks at the catalysts-only state for required/antirequired cells)
+      if (config.catalystsStill || (isLeaf && !checkRequired))
+        config.catalystsState.gen++; // fixed point, or not needed: stepping would change nothing
       else
         config.catalystsState.Step();
 

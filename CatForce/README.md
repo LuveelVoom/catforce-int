@@ -137,8 +137,8 @@ patterns (a mismatch disables it with a warning) and timed against it on your
 machine; the faster one is used. Delete `rule_kernels.h` and run `make` to go
 back to the table stepper only. If your build needs a different command than
 `make` (e.g. `make CC=g++`), set it with the `CATFORCE_MAKE` environment
-variable. The shipped `rule_kernels.h` already contains B3/S23-q4i and
-Cyclotronic.
+variable. The shipped `rule_kernels.h` already contains B3/S23-q4i,
+Cyclotronic and HighLife (B36/S23).
 
 **Auto-split (generator page)**: paste a whole Golly pattern into the page's
 "Auto-split" card. Each separate object is simulated alone under your rule;
