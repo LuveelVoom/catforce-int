@@ -1,6 +1,7 @@
 #!/bin/bash
 # usage: suite.sh <binary> <label> ; per-test clean dirs, dedup off + solution list for exact comparison
-# Prints one line per test and then compares the result counts and md5s with tests/base.txt.
+# Prints one line per test and then compares the solution counts and md5s with tests/base.txt (the number
+# of output rows before the slash can vary by a few between multi-threaded runs, so it isn't compared).
 # Results go to $OUT_DIR (default: /tmp).
 BIN=$(cd "$(dirname "$1")" && pwd)/$(basename "$1"); S=$(cd "$(dirname "$0")" && pwd); OUT=${OUT_DIR:-/tmp}/catforce_res_$2; rm -rf "$OUT"; mkdir -p "$OUT"
 now(){ perl -MTime::HiRes=time -e 'printf "%.3f", time'; }
@@ -12,5 +13,5 @@ for f in intb conway baitA quad sym ex_orfilter ex_match ex_phase-changing-blink
   printf "%-26s %6.1fs %-30s %s\n" $f $(echo "$e - $s" | bc) "$(grep '^results' log.txt | tail -1 | cut -d, -f1)" "$(grep -v '^#' list.txt 2>/dev/null | sed 's/^[0-9]*: //' | sort | md5sum | cut -c1-10)"
 done
 } | tee "$OUT/summary.txt"
-if diff <(awk '{print $1, $3, $4, $5}' "$S/base.txt") <(awk '{print $1, $3, $4, $5}' "$OUT/summary.txt") >/dev/null; then echo "all match tests/base.txt"
-else echo "DIFFERS from tests/base.txt:"; diff <(awk '{print $1, $3, $4, $5}' "$S/base.txt") <(awk '{print $1, $3, $4, $5}' "$OUT/summary.txt"); exit 1; fi
+if diff <(awk '{n = split($4, r, "/"); print $1, r[n], $5}' "$S/base.txt") <(awk '{n = split($4, r, "/"); print $1, r[n], $5}' "$OUT/summary.txt") >/dev/null; then echo "all match tests/base.txt"
+else echo "DIFFERS from tests/base.txt:"; diff <(awk '{n = split($4, r, "/"); print $1, r[n], $5}' "$S/base.txt") <(awk '{n = split($4, r, "/"); print $1, r[n], $5}' "$OUT/summary.txt"); exit 1; fi

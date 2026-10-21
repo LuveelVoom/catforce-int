@@ -283,8 +283,8 @@ public:
     std::vector<std::string> elems = splitwhitespace(line);
 
     if (elems.size() < 6) {
-      std::cout << "The line " << line << "is invalid" << std::endl;
-      std::cout << "Format: cat <rle> <absense interval> <centerX> <centerY> "
+      std::cout << "The line " << line << " is invalid" << std::endl;
+      std::cout << "Format: cat <rle> <max-active> <centerX> <centerY> "
                    "<symm Type | + / x *>"
                 << std::endl;
       exit(1);
@@ -292,6 +292,8 @@ public:
 
     rle = elems[1];
     CheckRle(rle, "cat");
+    if (rle.find('o') == std::string::npos)
+      Die("cat " + rle + ": the catalyst has no live cells");
     maxDisappear = ParseIntOrDie(elems[2], "cat max-active", 0);
     centerX = ParseIntOrDie(elems[3], "cat dx");
     centerY = ParseIntOrDie(elems[4], "cat dy");
@@ -1266,7 +1268,7 @@ void ReadParams(const std::string& fname, std::vector<CatalystInput> &catalysts,
 
       std::vector<std::string> rangeElems;
       split(elems[1], '-', rangeElems);
-      if (rangeElems.empty() || rangeElems.size() > 2)
+      if (rangeElems.empty() || rangeElems.size() > 2 || rangeElems[0].empty())
         Die(elems[0] + ": generation \"" + elems[1] + "\" must be like 50 or 1-100");
 
       if (rangeElems.size() == 1) {
@@ -1366,9 +1368,9 @@ void ReadParams(const std::string& fname, std::vector<CatalystInput> &catalysts,
       params.verbose = !(v == "no" || v == "false" || v == "0" || v == "off");
     }
     if (elems[0] == "resume-from")
-      params.resumeFrom = std::stoul(elems[1]);
+      params.resumeFrom = ParseIntOrDie(elems[1], "resume-from", 0);
     if (elems[0] == "split-level")
-      params.splitLevel = std::stoul(elems[1]);
+      params.splitLevel = ParseIntOrDie(elems[1], "split-level", 1);
     if (elems[0] == "contact-filter")
       params.soloRecovery = !(elems[1] == "no" || elems[1] == "false" || elems[1] == "0" || elems[1] == "off");
     if (elems[0] == "unique-recovery")

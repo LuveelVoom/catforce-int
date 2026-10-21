@@ -146,8 +146,8 @@ Engine changes (not visible in the input format):
     distance-2 flood over the envelope from rotor cells; kept if it contains a catalyst intact in
     some phase, has a period in range, and the part minus all catalyst phases is not periodic.
     Deduped over phases/8 orientations/translation. +22% time on 3q4i; 15 found there,
-    verified periodic in Python (`diag/lib.py`). Not in --merge/.cfdata; no generator fields
-    (use the generator's "Extra lines" box).
+    verified periodic in Python (`diag/lib.py`). Not in --merge/.cfdata. Generator: checkboxes
+    for `unique-recovery yes` and `find-oscillators yes` (2026-10-20); a period range goes in "Extra lines".
   * Seen while testing (pre-existing, not changed): with many threads the number of output rows
     (categories) can vary by a few between runs; the solution lists are identical.
 
@@ -183,7 +183,7 @@ Page logic can be tested headless with jsdom (stub canvas getContext and clipboa
 - Generator: "Same search if closer than" and "Keep everything as one search" controls are now
   always shown after a paste; objects must be set to "Always present" individually.
 - No open bugs known. Possible next steps: test `contact-filter` on the full 3-catalyst search;
-  generator fields for `unique-recovery` and `find-oscillators`; `--find-catalysts` (enumerate
+  `--find-catalysts` (enumerate
   small still lifes/oscillators of the rule and test them as catalysts).
 
 ## 7. How to verify a build quickly

@@ -89,7 +89,7 @@ const KEYWORDS = new Set(['sort-by', 'rule', 'include', 'cat', 'max-gen', 'num-c
   'exclude-area', 'start-gen', 'last-gen', 'output', 'full-report', 'filter', 'andfilter', 'orfilter', 'match', 'fit-in-width-height',
   'max-category-size', 'symmetry', 'also-required', 'stop-after-cats-destroyed', 'max-junk', 'keep-duplicates', 'keep-interacting',
   'output-gap', 'bait', 'threads', 'max-time', 'max-results', 'output-list', 'verbose', 'part', 'unique-output', 'lightcone',
-  'lightcone-tight', 'resume-from', 'contact-filter', 'split-level', 'spaceship-cutoff', 'torus', 'fixed-cat', 'catalyst-zone',
+  'lightcone-tight', 'resume-from', 'contact-filter', 'unique-recovery', 'find-oscillators', 'split-level', 'spaceship-cutoff', 'torus', 'fixed-cat', 'catalyst-zone',
   'no-catalyst-zone', 'keep-empty', 'torus-edge', 'layout', 'legend']);
 const GOAL_CHIPS = [['Glider', 'bo$2bo$3o!'], ['Block', '2o$2o!'], ['Herschel', 'o$3o$obo$2bo!']];
 
@@ -102,7 +102,7 @@ function defaultState() {
     startGen: '', lastGen: '', numTransparent: '', stopAfter: '', maxCatSize: '', fitW: '', fitH: '', alsoRle: '', alsoX: '0', alsoY: '0',
     output: 'results.rle', outputList: '', fullReport: '', threads: '', maxTime: '', maxResults: '', part: '', outputGap: '',
     includes: [], keepDup: false, keepInteract: false, verbose: false, splitGap: '6', splitMerge: false,
-    torus: '64', spaceshipCutoff: '', torusEdge: 'flag', contactFilter: false, lightconeOff: false,
+    torus: '64', spaceshipCutoff: '', torusEdge: 'flag', contactFilter: false, uniqueRecovery: false, findOsc: false, lightconeOff: false,
     uniqueOutput: '', resumeFrom: '', splitLevel: '', fixed: [], extra: ''
   };
 }
@@ -310,6 +310,8 @@ function build(S, forSetup) {
   }
   if (S.torusEdge && S.torusEdge !== 'flag') L.push('torus-edge ' + S.torusEdge);
   if (S.contactFilter) L.push('contact-filter yes');
+  if (S.uniqueRecovery) L.push('unique-recovery yes');
+  if (S.findOsc) L.push('find-oscillators yes');
   if (S.lightconeOff) L.push('lightcone no');
   if (S.keepDup) L.push('keep-duplicates yes');
   if (S.keepInteract) L.push('keep-interacting yes');
@@ -614,6 +616,8 @@ function parseIn(text) {
       case 'keep-interacting': st.keepInteract = yes(t[1]); break;
       case 'verbose': st.verbose = yes(t[1]); break;
       case 'contact-filter': st.contactFilter = yes(t[1]); break;
+      case 'unique-recovery': st.uniqueRecovery = yes(t[1]); break;
+      case 'find-oscillators': if (/^(yes|no|true|false|on|off|0|1)$/i.test(t[1])) st.findOsc = yes(t[1]); else extra.push(line.trim()); break;   // a period range stays as written
       case 'lightcone': st.lightconeOff = !yes(t[1]); break;
       case 'unique-output': st.uniqueOutput = t.slice(1).join(' '); break;
       case 'fixed-cat':
