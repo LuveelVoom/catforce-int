@@ -2985,12 +2985,6 @@ public:
 
     LifeState catalystState = conf.startingCatalysts;
 
-    unsigned maxMatchingPop;
-    if(params.maxJunk != -1)
-      maxMatchingPop = workspace.GetPop() + params.maxJunk;
-    else
-      maxMatchingPop = 10000;
-
     std::vector<bool> filterPassed(params.filterGen.size(), false);
 
     unsigned stopTime;
@@ -3023,20 +3017,18 @@ public:
         }
 
         if (shouldCheck && (params.filterType[k] == MATCHFILTER)) {
-          // if(workspace.GetPop() <= maxMatchingPop) {
-            LifeState withoutCatalysts = workspace & ~catalystState;
-            for (auto sym : SymmetryGroupFromEnum(StaticSymmetry::D8)) {
-              LifeTarget transformed = targetFilter[k];
-              transformed.Transform(sym);
-              LifeState matches = withoutCatalysts.Match(transformed);
-              if(!matches.IsEmpty()) {
-                succeeded = true;
-                foundCells = matches.Convolve(transformed.wanted) & withoutCatalysts;
-                junk = withoutCatalysts & ~foundCells;
-                break;
-              }
+          LifeState withoutCatalysts = workspace & ~catalystState;
+          for (auto sym : SymmetryGroupFromEnum(StaticSymmetry::D8)) {
+            LifeTarget transformed = targetFilter[k];
+            transformed.Transform(sym);
+            LifeState matches = withoutCatalysts.Match(transformed);
+            if(!matches.IsEmpty()) {
+              succeeded = true;
+              foundCells = matches.Convolve(transformed.wanted) & withoutCatalysts;
+              junk = withoutCatalysts & ~foundCells;
+              break;
             }
-          // }
+          }
         }
 
         if (succeeded && (params.maxJunk == -1 || junk.GetPop() <= params.maxJunk)) {
@@ -4658,7 +4650,7 @@ int main(int argc, char *argv[]) {
               << searcher.params.outputFile << std::endl;
   }
 
-  printf("Total elapsed time: %f seconds\n", searcher.ElapsedSeconds());
+  printf("Initialization took %.2f seconds\n", searcher.ElapsedSeconds());
 
   if (checkOnly) {
     searcher.PrintSummary();

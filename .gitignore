@@ -9,3 +9,7 @@ CatForce/maskpack3-*
 # saved forum page (contains a login session id)
 reference/
 CatForce/CatForce128
+__pycache__/
+# search output written next to the binary
+CatForce/*.rle
+CatForce/*.cfdata

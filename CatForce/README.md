@@ -14,6 +14,35 @@ Usage
 --
 Run `make`, and then `./CatForce inputfile.in`. Currently only tested with `clang`.
 
+Quick start
+--
+The easiest way to write an input file is the generator page,
+`catforce_in_generator.html`: paste the reaction and the catalysts, and it writes the `.in`
+file and warns about the usual mistakes. By hand, `examples/1.in` is a small complete file:
+
+```
+max-gen 100                     # simulate this long
+num-catalyst 3                  # exactly 3 catalysts (1-3 would allow 1, 2 or 3)
+stable-interval 10              # a catalyst counts as recovered after 10 gens intact
+search-area -8 -8 16 16         # where catalysts may be placed (torus centre is 0 0)
+pat 2bo$bobo$o3bo$o3bo$o3bo$bobo$2bo! -3 -4      # the active pattern and its offset
+filter 24 b2o$obo$bo 5 -3       # goal: this must be present at gen 24
+cat 2o$2o 60 0 0 .              # block: may be missing 60 gens; '.' = one orientation
+cat 2b2o$3bo$3o$o 10 -2 -2 *    # eater: may be missing 10 gens; '*' = all 8 orientations
+output 1.rle
+```
+
+Run `./CatForce file.in --check` first: it prints what will be searched and how many
+placements, without searching. Open the results in Golly with the same rule; `<output>_unique.rle`
+holds one example of each distinct outcome. Three mistakes give useless output without an error:
+
+- **Orientation character `.`** tries only the orientation pasted. Use `*` unless the catalyst is
+  symmetric (see Catalyst Symmetry below).
+- **No goal** (`filter`, `match` or `bait`): every reaction where the catalysts recover is reported,
+  including the pattern simply dying.
+- **Large `max-active`** (how long a catalyst may be missing): slow, and the output fills with junk.
+  Start around 10-30.
+
 Input File Format
 --
 See `examples/p83.in` etc. Some useful lists of catalysts are given in `catlists/`.

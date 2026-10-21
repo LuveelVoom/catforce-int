@@ -13,7 +13,7 @@ in-browser `.in` file generator. Full list and measurements: [HANDOFF.md](HANDOF
 | `CatForce/` | Source. `cd CatForce && make`, then `./CatForce file.in` |
 | `CatForce/README.md` | Input-file reference (every keyword) |
 | `generator/catforce_in_generator.html` | `.in` file generator; open in a browser |
-| `generator/src/` | Generator sources; `python3 build.py` rebuilds the page |
+| `generator/src/` | Generator sources; `python3 generator/src/build.py` rebuilds the page (both copies) |
 | `tests/` | Regression suite and baseline results |
 | `diag/` | Python helpers to decode and simulate RLE results |
 | `user_files/` | Search files and results |
@@ -23,5 +23,5 @@ in-browser `.in` file generator. Full list and measurements: [HANDOFF.md](HANDOF
 ```
 cd CatForce && make
 ./CatForce ../user_files/highlife2.txt --max-time 12     # ~1 s, 7 results
-bash ../tests/suite.sh ./CatForce check                   # compare the hashes with tests/base.txt
+bash ../tests/suite.sh ./CatForce check                   # ends with "all match tests/base.txt"
 ```

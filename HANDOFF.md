@@ -1,7 +1,7 @@
 # CatForce INT — handoff for a new chat
 
-Upload this whole zip to the new chat and say: "Read HANDOFF.md first, then continue."
-Everything needed to keep working is in this archive. Nothing depends on the old chat.
+Start a new chat in this folder and say: "Read HANDOFF.md first, then continue."
+Everything needed to keep working is in this repo. Nothing depends on the old chat.
 
 ## 1. What this project is
 
@@ -9,7 +9,7 @@ A modified **CatForce** (catalyst/conduit search program for Conway's Life, by M
 extended to **isotropic non-totalistic (INT/Hensel) rules**, Life-like rules and Golly `MAP` rules.
 The user runs searches mainly in rules such as `B3/S23-q4i`, `B3/S23-a5` and HighLife `B36/S23`.
 
-Folder map of this zip:
+Folder map:
 
 | Path | What it is |
 |---|---|
@@ -20,7 +20,7 @@ Folder map of this zip:
 | `user_files/` | The user's own .in files, results and attachments from the chat |
 | `tests/` | Regression suite (`suite.sh`), its inputs and baseline results |
 | `diag/` | Small Python helpers used to decode/simulate RLE results (`lib.py`) |
-| `reference/LC1.com.html` | Forum post (Lightcone author) used as inspiration for speedups |
+| `reference/` | Local only (git-ignored): saved forum post by the Lightcone author, used for speedup ideas |
 
 ## 2. User preferences (keep following these)
 
@@ -128,7 +128,7 @@ Engine changes (not visible in the input format):
   dead-end pruning, incremental StepDirty, smaller lookup tables, memo caches,
   "remember single-catalyst outcomes" (no correct cheap version exists).
 - Not done (expensive): full Lightcone-style approach signatures (5×5) per catalyst/orientation;
-  a merge tool for `--part` / `_from<n>` outputs; resume that appends to the same output files.
+  resume that appends to the same output files (use `--merge` on the `.cfdata` files instead).
 - Diagnosis of the user's early `search.txt` (B3/S23-a5, D2| symmetry): results looked bad because
   (a) no goal/filter, (b) every `cat` used symmetry `.` (one orientation only), (c) num-catalyst
   means exactly N, (d) max-active 100. Corrected file in `user_files/search_fixed.txt`.
@@ -159,7 +159,7 @@ Built from three pieces in `generator/src/`:
 - `old_generator_v8.html` — older page whose lines supply the shared helpers
   (cleanRle, decodeRle, checkRule, ruleTables, stepCells, classifyObject, splitComponents,
   clusterObjects, encodeRle, makeSetups).
-- `build.py` — run `python3 build.py` inside `generator/src/` to rebuild
+- `build.py` — run `python3 generator/src/build.py` (from any folder) to rebuild
   `catforce_in_generator.html` (it also patches makeSetups to support the "Always present" role).
 
 Generator features: six steps (rule, starting pattern with auto-split into active/bait/
@@ -172,7 +172,7 @@ the old account; on a new account, publish `catforce_in_generator.html` again if
 Generator now also has: torus size, spaceship-cutoff, torus-edge, contact-filter, lightcone,
 unique-output, resume-from, split-level, fixed catalysts (+ import from an output-list line or a
 result RLE), layout import/export, and an "Extra lines" box for keywords without a field.
-`build.py` writes `generator/catforce_in_generator.html`; copy it to `CatForce/` too.
+`build.py` writes `generator/catforce_in_generator.html` and the copy in `CatForce/`.
 Page logic can be tested headless with jsdom (stub canvas getContext and clipboard).
 
 ## 6. Where things stood at the end
@@ -182,15 +182,14 @@ Page logic can be tested headless with jsdom (stub canvas getContext and clipboa
   (need the current CatForce build because of the also-required fix).
 - Generator: "Same search if closer than" and "Keep everything as one search" controls are now
   always shown after a paste; objects must be set to "Always present" individually.
-- No open bugs known. Possible next steps the user discussed: test `contact-filter` on the full
-  3-catalyst search; merge tool for split/resumed outputs; generator fields for the new options.
+- No open bugs known. Possible next steps: test `contact-filter` on the full 3-catalyst search;
+  generator fields for `unique-recovery` and `find-oscillators`; `--find-catalysts` (enumerate
+  small still lifes/oscillators of the rule and test them as catalysts).
 
 ## 7. How to verify a build quickly
 
 ```
 cd CatForce && make
 ./CatForce ../user_files/highlife2.txt --max-time 12     # ~1 s, 7 results
-bash ../tests/suite.sh ./CatForce check                   # compare md5s with tests/base.txt
+bash ../tests/suite.sh ./CatForce check                   # ends with "all match tests/base.txt"
 ```
-`tests/suite.sh` has hard-coded paths from the old machine: edit the `S=` line and the
-`cp $S/ref/$f.in` line to point at this `tests/` folder before running.
