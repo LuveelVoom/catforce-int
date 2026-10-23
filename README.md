@@ -6,7 +6,8 @@ Original CatForce is Michael Simkin's work; this repo holds LuveelVoom's extende
 
 Main additions: per-rule compiled SIMD kernels, Apple-silicon support, bait objects, search/exclude areas,
 `also-required` cells, unique-outcome output, lightcone pruning, contact filter, pause/resume, and an
-in-browser `.in` file generator. Full list and measurements: [HANDOFF.md](HANDOFF.md).
+in-browser `.in` file generator. Every input keyword is documented in [CatForce/README.md](CatForce/README.md);
+development notes and measurements are in [HANDOFF.md](HANDOFF.md).
 
 | Path | What it is |
 |---|---|
@@ -14,9 +15,9 @@ in-browser `.in` file generator. Full list and measurements: [HANDOFF.md](HANDOF
 | `CatForce/README.md` | Input-file reference (every keyword) |
 | `generator/catforce_in_generator.html` | `.in` file generator; open in a browser |
 | `generator/src/` | Generator sources; `python3 generator/src/build.py` rebuilds the page (both copies) |
-| `tests/` | Regression suite and baseline results |
+| `tests/` | Regression suite (checks a build against recorded results) |
 | `diag/` | Python helpers to decode and simulate RLE results |
-| `user_files/` | Search files and results |
+| `user_files/` | Example search files |
 
 ## Quick check
 
