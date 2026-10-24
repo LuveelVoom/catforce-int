@@ -161,8 +161,7 @@ This writes `rule_kernels.h` with a stepping kernel generated for that rule (a
 bit-parallel logic circuit: neighbour count, the rule's totalistic part, and
 its exceptions such as 3q or 4i, minimised and run four columns at a time),
 rebuilds the program with `make` (about 10-20 s), and then starts the search.
-Searches in that rule are then about 2x faster (measured: B3/S23-q4i search
-21.2 s -> 8.8 s, Cyclotronic 1.7 s -> 1.0 s; identical results). Up to 8 rules
+Searches in that rule are then about 2x faster [1]. Up to 8 rules
 are kept, so switching between a few rules needs no rebuild; a rule that is
 not compiled in still works with the table stepper. The startup line says
 which stepper is used, e.g. `(compiled kernel, 4.2x the table stepper here)`.
@@ -199,8 +198,7 @@ override the same keywords in the file.
 after generation `max-gen - stable-interval` can never be part of one. Those
 placements are not tried (sacrificial catalysts excepted). Results are
 unchanged; the saving is largest when `max-gen` is not much bigger than
-`stable-interval` (measured on a B3/S23-q4i search: 2.7x at max-gen 30, 1.5x at
-45, 1.2x at 60, with stable-interval 15).
+`stable-interval` [2].
 
 **Hopeless branches are dropped**: once a catalyst is seen missing so late that
 it can no longer stay recovered for `stable-interval` generations before
@@ -217,8 +215,7 @@ every placement.
 
 **Splitting a search** (`--part K/N`): runs only every N-th first-catalyst
 placement, starting with the K-th, so N runs with `--part 1/N` ... `--part N/N`
-together cover exactly the whole search (checked: the union equals a single
-run, with no overlap). Use it to spread a search over several machines, or to
+together cover exactly the whole search [3]. Use it to spread a search over several machines, or to
 do a long search in pieces. Each part writes its own files, named with a
 `_partKofN` suffix (e.g. `results_part2of4.rle`). Duplicate removal works within
 a part, so mirror images can appear in two different parts.
@@ -227,7 +224,7 @@ second time to quit immediately.
 
 **Threads**: all cores are used by default. The top-level placements are
 split between the threads, so the set of solutions is the same as with one
-thread (checked), only faster. Output order, and which of two mirror-image
+thread [4], only faster. Output order, and which of two mirror-image
 solutions is kept, may vary between runs; `threads 1` makes runs fully
 repeatable. Build with `-pthread` (the Makefile does).
 
@@ -319,7 +316,7 @@ isotropic. The number removed is printed at the end. Add
 **Catalyst ranges (`num-catalyst 1-3`)**: one search reports every result with
 between the two numbers of catalysts. It costs little more than searching for
 the larger number alone, since the smaller configurations are visited on the way
-anyway. (Checked: `1-2` gives exactly the results of `1` plus those of `2`.) Every
+anyway [5]. Every
 catalyst of a result must interact, so a larger result is never a smaller one
 with an idle catalyst added.
 
@@ -347,20 +344,16 @@ running a search in parts (`--part`) or in pieces (`resume-from`), combine them:
 This reads `search.in` for the settings (rule, pattern, symmetry, sort order),
 removes duplicates across the files as a single run would, and writes the usual
 output files with `_merged` added to their names (`results_merged.rle`, its
-`_unique`, `_history` and list files). (Checked: with `keep-duplicates yes`,
-merging 3 parts gives exactly the results of one full run; with duplicate
-removal the count is the same, though which of two mirror images is kept can
-differ.) A warning is printed if a file was made with another rule or torus.
+`_unique`, `_history` and list files) [6]. With duplicate removal, which of two mirror images is kept can
+differ from a single run. A warning is printed if a file was made with another rule or torus.
 
 **Fixed catalysts (`fixed-cat`)**: `fixed-cat <rle> <x> <y> <max-active> [options]`
 puts a catalyst in place before the search starts, with its top-left corner at
 (x, y). It must recover like any other catalyst (the same `cat` options work:
 `period`, `isblinker`, `required`, `forbidden`, ...), but it is not searched for
 and does not count towards `num-catalyst`. Use it to search in stages: take a
-result, fix its catalysts, and search for one more. Searched plus fixed
-catalysts may be at most 8. The output list marks them `fixed-cat [...]`.
-(Checked: fixing one catalyst of a 2-catalyst search and searching for 1 gives
-exactly the 2-catalyst results that contain it.) The generator page can make
+result, fix its catalysts, and search for one more [7]. Searched plus fixed
+catalysts may be at most 8. The output list marks them `fixed-cat [...]`. The generator page can make
 these lines from a pasted result.
 
 **Torus edge (`torus-edge`)**: a result whose reaction (everything it touches
@@ -487,7 +480,7 @@ search areas can be larger and spaceships take twice as long to wrap around.
 `CatForce` then starts `CatForce128` from the same folder, building it with
 `make CatForce128` the first time (afterwards plain `make` and
 `--compile-rule` keep it up to date). Results are the same as on the 64 torus
-when nothing reaches the edge (checked on the test suite). It is slower:
+when nothing reaches the edge [8]. It is slower:
 measured 2.6-3.5x per search on the test files (8x with `match` filters), and
 building the mask cache the first time for a catalyst list takes about 16x
 as long.
@@ -561,8 +554,7 @@ supported. B3/S23 uses the original fast stepper; every other rule uses a
 table-driven stepper, which updates 4 cells per lookup in a 256 KB table and
 visits only the parts of the board next to live cells; per generation it is
 roughly half the speed of the Conway stepper. `--compile-rule` (see below)
-builds a kernel for your rule that is about as fast as the Conway one. Non-isotropic `MAP` rules are supported (checked
-against Golly's MAP definition); for them, rotated or mirrored catalyst
+builds a kernel for your rule that is about as fast as the Conway one. Non-isotropic `MAP` rules are supported [9]; for them, rotated or mirrored catalyst
 variants may behave differently and duplicate removal by symmetry is off.
 Output files carry the rule as given (an isotropic `MAP` rule is written as
 its Hensel equivalent). Build with `make` (or `make CC=g++` if you do not
@@ -598,3 +590,15 @@ The default is "odd" transformations, i.e. those that fix the cell at
 (0,0); `verticaleven` and `horizontaleven` (referring to bounding box
 dimensions) are recognized as equivalent to `-even` and `|even`,
 respectively.
+
+## Checks
+
+1. Measured: a B3/S23-q4i search took 21.2 s before and 8.8 s after, a Cyclotronic search 1.7 s and 1.0 s, with identical results.
+2. Measured on a B3/S23-q4i search with stable-interval 15: 2.7x faster at max-gen 30, 1.5x at 45, 1.2x at 60.
+3. Checked: the union of the N parts equals a single run, with no overlap.
+4. Checked: the set of solutions with several threads equals the single-thread set.
+5. Checked: `num-catalyst 1-2` gives exactly the results of `1` plus those of `2`.
+6. Checked: with `keep-duplicates yes`, merging 3 parts gives exactly the results of one full run; with duplicate removal the count is the same.
+7. Checked: fixing one catalyst of a 2-catalyst search and searching for 1 gives exactly the 2-catalyst results that contain it.
+8. Checked on the test suite (`tests/`).
+9. Checked against Golly's definition of MAP rules.
