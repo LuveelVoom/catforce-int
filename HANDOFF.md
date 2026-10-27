@@ -151,6 +151,19 @@ Engine changes (not visible in the input format):
   * Seen while testing (pre-existing, not changed): with many threads the number of output rows
     (categories) can vary by a few between runs; the solution lists are identical.
 
+- 2026-10-26, faster cold initialization: `CollisionMask` simulated all N×N offsets of every
+  catalyst pair. It now simulates only offsets where some phase of b comes within distance 2
+  of some phase of a (the others can't interact under a range-1 rule without B0). Used only when
+  both catalysts return to themselves after the lcm period, else all offsets as before.
+  Mask packs byte-identical to the old build for 3q4i, HighLife, a5 (28 cats), intb, ex_p34,
+  conway, two non-isotropic MAP rules and torus 128; suite matches. Cold init (1 thread):
+  a5 16.0 s -> 0.81 s, HighLife 1.6 s -> 0.08 s, torus 128 2.5 s -> 0.17 s.
+  Note: max-time counts from program start, so a cold init used to eat into it.
+- 2026-10-26, tidy-up: the user's B3-qr4k5cek6c/S23-a4er56aek search that had been run inside
+  `CatForce/` (conway.in, .resume, results*) moved to `../catforce-work/qr4k-a4er/`, with the
+  4-catalyst edit that had overwritten `tests/conway.in` (as `conway-4cat.in`);
+  `tests/conway.in` restored from git so the suite matches again.
+
 ## 5. The generator (catforce_in_generator.html)
 
 Built from three pieces in `generator/src/`:

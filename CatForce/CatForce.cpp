@@ -1858,9 +1858,42 @@ struct Configuration {
 LifeState CollisionMask(const LifeState &a, const LifeState &b, unsigned period) {
   unsigned popsum = a.GetPop() + b.GetPop();
 
+  // Only offsets where some phase of b comes within distance 2 of some phase of
+  // a can interact; elsewhere the two evolve independently (range 1, no B0), so
+  // if each returns to itself after `period` the offset is collision-free.
+  // If either one doesn't, every offset is simulated as before.
+  LifeState envA, envB, sa, sb;
+  sa.Join(a, 0, 0);
+  sb.Join(b, 0, 0);
+  envA.Join(a);
+  envB.Join(b);
+  for (unsigned i = 0; i < period; i++) {
+    sa.Step();
+    sb.Step();
+    envA.Join(sa);
+    envB.Join(sb);
+  }
+  bool selfPeriodic = sa.Contains(a) && sa.GetPop() == a.GetPop() &&
+                      sb.Contains(b) && sb.GetPop() == b.GetPop();
+  LifeState candidates;
+  if (selfPeriodic) {
+    LifeState near = envA.ZOI().ZOI();
+    std::vector<std::pair<unsigned, unsigned>> nearCells, bCells;
+    for (unsigned x = 0; x < N; x++)
+      for (unsigned y = 0; y < N; y++) {
+        if (near.Get(x, y)) nearCells.emplace_back(x, y);
+        if (envB.Get(x, y)) bCells.emplace_back(x, y);
+      }
+    for (auto &p : nearCells)
+      for (auto &q : bCells)
+        candidates.Set((p.first + N - q.first) % N, (p.second + N - q.second) % N);
+  }
+
   LifeState mask;
   for (unsigned x = 0; x < N; x++) {
     for (unsigned y = 0; y < N; y++) {
+      if (selfPeriodic && !candidates.Get(x, y))
+        continue;
       LifeState state = a;
       state.Join(b, x, y);
 
