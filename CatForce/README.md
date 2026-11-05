@@ -33,8 +33,7 @@ output 1.rle
 ```
 
 Run `./CatForce file.in --check` first: it prints what will be searched and how many
-placements, without searching. Open the results in Golly with the same rule; `<output>_unique.rle`
-holds one example of each distinct outcome. Three mistakes give useless output without an error:
+placements, without searching. `<output>_unique.rle` holds one example of each distinct outcome. Three mistakes give useless output without an error:
 
 - **Orientation character `.`** tries only the orientation pasted. Use `*` unless the catalyst is
   symmetric (see Catalyst Symmetry below).
@@ -395,10 +394,9 @@ Layout files
 ---
 
 A layout describes the geometry of a search as a picture: a multi-state RLE in
-which each cell's state says what the cell is. Using LifeHistory states, you can
-draw and edit it in Golly (rule `<your rule>History`, e.g. `B3/S23-q4iHistory`),
-and the whole search (settings included) can live in one file that Golly opens
-and CatForce runs directly:
+which each cell's state says what the cell is. It uses LifeHistory states (draw it
+under `<your rule>History`, e.g. `B3/S23-q4iHistory`), so a whole search, settings
+included, can be one RLE file that CatForce runs directly:
 
     ./CatForce search.rle
 
@@ -487,9 +485,8 @@ as long.
 
 **Output layout**: each row of solutions is drawn in a shared frame sized to
 everything those solutions touch while they run (not just their starting
-cells), with `output-gap` empty cells between frames. So the output can be
-run in Golly without neighbouring solutions colliding (spaceships that escape
-the reaction can still reach a neighbour eventually).
+cells), with `output-gap` empty cells between frames, so neighbouring solutions
+don't collide when run (escaping spaceships still can, eventually).
 
 **Check Recovery**: Catalysts with the `check-recovery` attribute are
 immediately tested for whether they recover in `max-active`

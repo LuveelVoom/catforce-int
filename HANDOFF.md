@@ -160,7 +160,7 @@ Engine changes (not visible in the input format):
   a5 16.0 s -> 0.81 s, HighLife 1.6 s -> 0.08 s, torus 128 2.5 s -> 0.17 s.
   Note: max-time counts from program start, so a cold init used to eat into it.
 - 2026-10-26, tidy-up: the user's B3-qr4k5cek6c/S23-a4er56aek search that had been run inside
-  `CatForce/` (conway.in, .resume, results*) moved to `../catforce-work/qr4k-a4er/`, with the
+  `CatForce/` (conway.in, .resume, results*) moved to `../results/qr4k-a4er/` (was `../catforce-work/`), with the
   4-catalyst edit that had overwritten `tests/conway.in` (as `conway-4cat.in`);
   `tests/conway.in` restored from git so the suite matches again.
 

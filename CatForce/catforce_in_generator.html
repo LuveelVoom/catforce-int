@@ -216,7 +216,7 @@ details.more > .body { display: flex; flex-direction: column; gap: 12px; }
 
   <!-- 2. Starting pattern -->
   <section class="step" id="s-pattern">
-    <header><span class="num">2</span><div><h2>Starting pattern</h2><p>Paste the reaction you want catalysts for, straight from Golly (select it, Edit → Copy). Each separate object is simulated: still lifes and oscillators become <b>baits</b> (objects that must be knocked away and rebuilt), everything else is the <b>active pattern</b>.</p></div></header>
+    <header><span class="num">2</span><div><h2>Starting pattern</h2><p>Paste the reaction's RLE. Each separate object is simulated: still lifes and oscillators become <b>baits</b> (objects that must be knocked away and rebuilt), everything else is the <b>active pattern</b>.</p></div></header>
     <textarea id="f-paste" data-k="paste" rows="4" spellcheck="false" placeholder="x = 3, y = 4, rule = B3/S23&#10;o$3o$obo$2bo!"></textarea>
     <div id="pasteMsg" class="msg"></div>
     <div id="objs" class="list"></div>
@@ -264,7 +264,7 @@ details.more > .body { display: flex; flex-direction: column; gap: 12px; }
     <div id="fixed" class="list"></div>
     <div class="btnrow"><button id="addFixed" class="small">Add a fixed catalyst</button></div>
     <label class="fld"><span class="lbl">Or take them from a result</span>
-      <textarea id="resultPaste" rows="2" spellcheck="false" placeholder="A line of the output-list file, or one result copied from the results .rle in Golly"></textarea>
+      <textarea id="resultPaste" rows="2" spellcheck="false" placeholder="A line of the output-list file, or one result from the results .rle"></textarea>
       <small>Every catalyst of that result becomes a fixed catalyst. An RLE is lined up with the active pattern, so paste one result exactly as it starts.</small>
     </label>
     <div class="btnrow"><button id="resultGo">Use its catalysts as fixed</button><span id="resultMsg" class="msg"></span></div>
@@ -795,7 +795,7 @@ const LIMIT_FIELDS = [
   ['spaceshipCutoff', 'Ignore spaceships farther than', 'spaceship-cutoff', '10', 'Cells from the rest of the reaction. No catalyst is placed for an escaped spaceship this far away ("off" to allow it).', false]
 ];
 const RUN_FIELDS = [
-  ['output', 'Results file', 'output', 'results.rle', 'Open it in Golly with the same rule.', false],
+  ['output', 'Results file', 'output', 'results.rle', 'Solutions as one RLE, a row per outcome.', false],
   ['outputList', 'Text list of results', 'output-list', 'none', 'Each result as catalyst names and positions.', false],
   ['fullReport', 'Unfiltered results file', 'full-report', 'none', 'Every result, ignoring the goals in step 4.', false],
   ['threads', 'CPU threads', 'threads', 'all cores', 'Same results, only faster.', true],

@@ -131,7 +131,7 @@ const LIMIT_FIELDS = [
   ['spaceshipCutoff', 'Ignore spaceships farther than', 'spaceship-cutoff', '10', 'Cells from the rest of the reaction. No catalyst is placed for an escaped spaceship this far away ("off" to allow it).', false]
 ];
 const RUN_FIELDS = [
-  ['output', 'Results file', 'output', 'results.rle', 'Open it in Golly with the same rule.', false],
+  ['output', 'Results file', 'output', 'results.rle', 'Solutions as one RLE, a row per outcome.', false],
   ['outputList', 'Text list of results', 'output-list', 'none', 'Each result as catalyst names and positions.', false],
   ['fullReport', 'Unfiltered results file', 'full-report', 'none', 'Every result, ignoring the goals in step 4.', false],
   ['threads', 'CPU threads', 'threads', 'all cores', 'Same results, only faster.', true],

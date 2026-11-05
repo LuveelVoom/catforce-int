@@ -797,8 +797,8 @@ static std::vector<std::set<std::pair<int, int>>> Components(const std::set<std:
 }
 
 // ---- layout files --------------------------------------------------------
-// A layout is a multi-state RLE (LifeHistory states, so it can be drawn and
-// edited in Golly) whose cell states give each cell a role; see README.md.
+// A layout is a multi-state RLE (LifeHistory states) whose cell states give each
+// cell a role; see README.md.
 // It is turned into ordinary keyword lines (pat, bait, fixed-cat, ...).
 struct LayoutRole {
   std::string kind; // pat zone exclude bait required fixed goal keep-empty ignore
@@ -2109,7 +2109,7 @@ public:
   LifeState init;
   // Every cell the result touches while it runs (init through the container's
   // horizon). Frames in the output are sized by this, so results drawn side by
-  // side do not run into each other when the output is simulated in Golly.
+  // side do not run into each other when the output is run.
   LifeState extent;
 
   // iters state in form of integers
@@ -2202,8 +2202,8 @@ public:
   // Lays the results out in one row. Every result is drawn in a common frame:
   // the bounding box of everything the results in this category touch while
   // they run (not just their starting cells), plus `gap` empty cells. That keeps
-  // the results aligned and lets the output be run in Golly without
-  // neighbouring results colliding (escaping spaceships excepted).
+  // the results aligned and keeps neighbouring results from colliding when run
+  // (escaping spaceships excepted).
   // With `historyPat` the row is drawn in LifeHistory states: catalysts state 1
   // (green), the starting pattern `historyPat` state 3 (white, leaves red
   // state-4 cells where it dies), and the cells where the goal was found
